@@ -1,47 +1,31 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
-	"time"
 
-	"RabbitMQ_Ecommerce/utils/events"
+	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
 
 func main() {
-	orderData := events.OrderCreatedPayload{
-		OrderID:    "PED-001",
-		CustomerID: "CLI-001",
-		Items: []events.OrderItem{
-			{
-				ProductID: "PROD-001",
-				Name:      "Teclado",
-				Quantity:  2,
-				UnitPrice: 150,
-			},
-		},
-		Total: 300,
-	}
-
-	dataJSON, err := json.Marshal(orderData)
+	connection, err := rabbitmq.Connect()
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer connection.Close()
 
-	envelope := events.EventEnvelope{
-		EventID:   "EVENTO-001",
-		EventType: events.PedidoCriado,
-		Producer:  "principal",
-		Timestamp: time.Now(),
-		Payload:      dataJSON,
-		Signature: "",
-	}
+	log.Println("[✓] Conectado ao RabbitMQ")
 
-	eventJSON, err := json.MarshalIndent(envelope, "", "  ")
+	channel, err := rabbitmq.OpenChannel(connection)
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer channel.Close()
 
-	fmt.Println(string(eventJSON))
+	log.Println("[✓] Canal RabbitMQ aberto")
+
+	if err := rabbitmq.DeclareExchanges(channel); err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("[✓] Exchanges declaradas com sucesso")
 }
