@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
 
@@ -28,4 +29,27 @@ func main() {
 	}
 
 	log.Println("[✓] Exchanges declaradas com sucesso")
+
+	stockQueue, err := rabbitmq.DeclareQueue(channel, events.QueueEstoque)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("[✓] Fila %s declarada com sucesso", stockQueue.Name)
+
+	err = rabbitmq.BindQueue(
+		channel,
+		stockQueue.Name,
+		events.PedidoCriado,
+		events.ExchangeEcommerce,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("[✓] Fila %s vinculada à exchange %s com a chave de roteamento %s",
+		stockQueue.Name,
+		events.ExchangeEcommerce,
+		events.PedidoCriado,
+	)
 }

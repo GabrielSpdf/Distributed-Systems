@@ -12,7 +12,7 @@ func Connect() (*amqp.Connection, error) {
 	connection, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"Erro ao conectar ao RabbitMQ: %w",
+			"erro ao conectar ao RabbitMQ: %w",
 			err,
 		)
 	}
@@ -24,7 +24,7 @@ func OpenChannel(connection *amqp.Connection) (*amqp.Channel, error) {
 	channel, err := connection.Channel()
 	if err != nil {
 		return nil, fmt.Errorf(
-			"Erro ao abrir canal RabbitMQ: %w",
+			"erro ao abrir canal RabbitMQ: %w",
 			err,
 		)
 	}

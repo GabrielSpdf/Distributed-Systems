@@ -1,5 +1,6 @@
 package events
 
+// Representa a estrutura de um produto disponível no catálogo do e-commerce
 type Product struct {
 	ID       string  `json:"id"`
 	Name     string  `json:"name"`
@@ -7,21 +8,24 @@ type Product struct {
 	Price    float64 `json:"price"`
 }
 
+// Representa um produto e sua respectiva quantidade dentro de um pedido
 type OrderItem struct {
-	ProductID  string  `json:"product_id"`
+	ProductID string  `json:"product_id"`
 	Name      string  `json:"name"`
 	Quantity  int     `json:"quantity"`
 	UnitPrice float64 `json:"unit_price"`
 }
 
+// Representa um pedido mantido pelo microsserviço Principal
 type Order struct {
 	ID         string      `json:"id"`
 	CustomerID string      `json:"customer_id"`
 	Items      []OrderItem `json:"items"`
-	Total 	   float64     `json:"total"`
+	Total      float64     `json:"total"`
 	Status     OrderStatus `json:"status"`
 }
 
+// Representa um possível estado de processamento de um pedido
 type OrderStatus string
 
 const (
@@ -34,6 +38,7 @@ const (
 	StatusShipped          OrderStatus = "ENVIADO"
 )
 
+// Representa o conteúdo do evento pedido.criado
 type OrderCreatedPayload struct {
 	OrderID    string      `json:"order_id"`
 	CustomerID string      `json:"customer_id"`
@@ -41,24 +46,27 @@ type OrderCreatedPayload struct {
 	Total      float64     `json:"total"`
 }
 
+// Representa o conteúdo dos eventos que precisam apenas identificar o pedido relacionado.
 type OrderReferencePayload struct {
-	OrderID    string      `json:"order_id"`
+	OrderID string `json:"order_id"`
 }
 
+// Rrepresenta o conteúdo do evento estoque.indisponivel
 type StockUnavailablePayload struct {
 	OrderID   string `json:"order_id"`
 	ProductID string `json:"product_id"`
 	Reason    string `json:"reason"`
 }
 
+// Representa o resultado do processamento de um pagamento
 type PaymentResultPayload struct {
 	OrderID string `json:"order_id"`
 	Reason  string `json:"reason,omitempty"`
 }
 
+// Representa o conteúdo do evento pedido.enviado
 type OrderShippedPayload struct {
 	OrderID      string `json:"order_id"`
-	InvoiceId    string `json:"invoice_id"`
+	InvoiceID    string `json:"invoice_id"`
 	TrackingCode string `json:"tracking_code"`
 }
-

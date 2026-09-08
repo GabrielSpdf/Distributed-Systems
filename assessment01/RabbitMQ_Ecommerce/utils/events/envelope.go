@@ -7,10 +7,10 @@ import (
 
 // Define a estrutura do envelope dos eventos a serem publicados/consumidos
 type EventEnvelope struct {
-	EventID string            `json:"event_id"`     
+	EventID   string          `json:"event_id"`
 	EventType string          `json:"event_type"`
-	Producer string           `json:"producer"`
+	Producer  string          `json:"producer"`
 	Timestamp time.Time       `json:"timestamp"`
-	Payload json.RawMessage   `json:"payload"`
+	Payload   json.RawMessage `json:"payload"`
 	Signature string          `json:"signature"`
 }

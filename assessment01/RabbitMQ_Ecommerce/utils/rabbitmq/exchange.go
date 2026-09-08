@@ -22,15 +22,15 @@ func DeclareExchange(
 	err := channel.ExchangeDeclare(
 		name,
 		exchangeType,
-		true,  // durable
-		false, // autoDelete
-		false, // internal
-		false, // noWait
-		nil,   // arguments
+		true,  // Durable
+		false, // AutoDelete
+		false, // Internal
+		false, // NoWait
+		nil,   // Arguments
 	)
 	if err != nil {
 		return fmt.Errorf(
-			"Erro ao declarar exchange %s do tipo %s: %w",
+			"erro ao declarar exchange %s do tipo %s: %w",
 			name,
 			exchangeType,
 			err,
@@ -39,7 +39,6 @@ func DeclareExchange(
 
 	return nil
 }
-
 
 func DeclareExchanges(channel *amqp.Channel) error {
 	err := DeclareExchange(
@@ -51,7 +50,6 @@ func DeclareExchanges(channel *amqp.Channel) error {
 		return err
 	}
 	log.Println("[✓] Exchange Ecommerce [direct] declarada com sucesso")
-
 
 	err = DeclareExchange(
 		channel,
