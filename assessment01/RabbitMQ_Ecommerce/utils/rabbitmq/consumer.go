@@ -8,7 +8,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-func ConsumeEvent(
+func ConsumeEvents(
 	channel *amqp.Channel,
 	queueName string,
 	handler func(envelope events.EventEnvelope) error,
