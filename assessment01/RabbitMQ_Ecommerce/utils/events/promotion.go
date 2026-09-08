@@ -1,5 +1,6 @@
 package events
 
+// Define a estrutura do Payload do evento de promoção
 type PromotionPayload struct {
 	ProductID          string  `json:"product_id"`
 	ProductName        string  `json:"product_name"`
