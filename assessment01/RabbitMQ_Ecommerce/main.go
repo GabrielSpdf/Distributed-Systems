@@ -1,8 +1,12 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"RabbitMQ_Ecommerce/utils/events"
@@ -10,99 +14,121 @@ import (
 )
 
 func main() {
-	connection, err := rabbitmq.Connect()
-	if err != nil {
+	if err := run(); err != nil {
 		log.Fatal(err)
 	}
-	defer connection.Close()
+}
 
-	log.Println("[✓] Conectado ao RabbitMQ")
-
-	channel, err := rabbitmq.OpenChannel(connection)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer channel.Close()
-
-	log.Println("[✓] Canal RabbitMQ aberto")
-
-	if err := rabbitmq.DeclareExchanges(channel); err != nil {
-		log.Fatal(err)
+func run() error {
+	if len(os.Args) != 3 {
+		return fmt.Errorf(
+			"uso: go run . <criar|excluir> <order_id>",
+		)
 	}
 
-	log.Println("[✓] Exchanges declaradas com sucesso")
+	action := os.Args[1]
+	orderID := os.Args[2]
 
-	stockQueue, err := rabbitmq.DeclareQueue(channel, events.QueueEstoque)
-	if err != nil {
-		log.Fatal(err)
+	if orderID == "" {
+		return fmt.Errorf("identificador do pedido não pode ser vazio")
 	}
 
-	log.Printf("[✓] Fila %s declarada com sucesso", stockQueue.Name)
-
-	err = rabbitmq.BindQueue(
-		channel,
-		stockQueue.Name,
-		events.PedidoCriado,
-		events.ExchangeEcommerce,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	log.Printf("[✓] Fila %s vinculada à exchange %s com a chave de roteamento %s",
-		stockQueue.Name,
-		events.ExchangeEcommerce,
-		events.PedidoCriado,
+	var (
+		eventType   string
+		payloadJSON []byte
+		err         error
 	)
 
-	order := events.OrderCreatedPayload{
-		OrderID:    "12345",
-		CustomerID: "user_001",
-		Items: []events.OrderItem{
-			{
-				ProductID: "prod_001",
-				Name:      "Produto A",
-				Quantity:  2,
-				UnitPrice: 10.0,
+	switch action {
+	case "criar":
+		order := events.OrderCreatedPayload{
+			OrderID:    orderID,
+			CustomerID: "user_001",
+			Items: []events.OrderItem{
+				{
+					ProductID: "prod_001",
+					Name:      "Produto A",
+					Quantity:  2,
+					UnitPrice: 10,
+				},
+				{
+					ProductID: "prod_002",
+					Name:      "Produto B",
+					Quantity:  1,
+					UnitPrice: 20,
+				},
 			},
-			{
-				ProductID: "prod_002",
-				Name:      "Produto B",
-				Quantity:  1,
-				UnitPrice: 20.0,
-			},
-		},
-		Total: 40.0,
+			Total: 40,
+		}
+
+		eventType = events.PedidoCriado
+		payloadJSON, err = json.Marshal(order)
+
+	case "excluir":
+		reference := events.OrderReferencePayload{
+			OrderID: orderID,
+		}
+
+		eventType = events.PedidoExcluido
+		payloadJSON, err = json.Marshal(reference)
+
+	default:
+		return fmt.Errorf(
+			"ação desconhecida: %s; utilize criar ou excluir",
+			action,
+		)
 	}
 
-	payloadJSON, err := json.Marshal(order)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("erro ao serializar payload: %w", err)
+	}
+
+	// Gera um identificador aleatório para esta publicação.
+	var eventIDBytes [16]byte
+	if _, err := rand.Read(eventIDBytes[:]); err != nil {
+		return fmt.Errorf("erro ao gerar identificador do evento: %w", err)
 	}
 
 	envelope := events.EventEnvelope{
-		EventID:   "Evt001",
-		EventType: events.PedidoCriado,
+		EventID:   hex.EncodeToString(eventIDBytes[:]),
+		EventType: eventType,
 		Producer:  "EcommerceService",
 		Timestamp: time.Now(),
 		Payload:   payloadJSON,
 		Signature: "",
 	}
 
-	err = rabbitmq.PublishEvent(
+	connection, err := rabbitmq.Connect()
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+
+	channel, err := rabbitmq.OpenChannel(connection)
+	if err != nil {
+		return err
+	}
+	defer channel.Close()
+
+	if err := rabbitmq.DeclareExchanges(channel); err != nil {
+		return err
+	}
+
+	if err := rabbitmq.PublishEvent(
 		channel,
 		events.ExchangeEcommerce,
-		events.PedidoCriado,
+		eventType,
 		envelope,
-	)
-	if err != nil {
-		log.Fatal(err)
+	); err != nil {
+		return err
 	}
 
 	log.Printf(
-		"[✓] Evento %s publicado na exchange %s com routing key %s",
+		"[✓] Publicação enviada: evento=%s tipo=%s pedido=%s",
 		envelope.EventID,
-		events.ExchangeEcommerce,
-		events.PedidoCriado,
+		envelope.EventType,
+		orderID,
 	)
+
+	return nil
 }
