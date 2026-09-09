@@ -130,8 +130,7 @@ func PublishCreateOrder(channel *amqp.Channel, orderID int) error {
 			events.ExchangeEcommerce,
 			events.PedidoCriado,
 			envelope,
-		);
-		err != nil {
+		); err != nil {
 			return fmt.Errorf("erro ao enviar evento: %w", err)
 		}
 
