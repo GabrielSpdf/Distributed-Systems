@@ -1,17 +1,41 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-	"time"
 
 	"RabbitMQ_Ecommerce/utils/events"
+	"RabbitMQ_Ecommerce/utils/misc"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
+
+// testData espelha as seções de testdata/events.json usadas por este publicador.
+type testData struct {
+	OrderCreatedPayload     events.OrderCreatedPayload     `json:"order_created_payload"`
+	OrderReferencePayload   events.OrderReferencePayload   `json:"order_reference_payload"`
+	StockUnavailablePayload events.StockUnavailablePayload `json:"stock_unavailable_payload"`
+	PaymentApprovedPayload  events.PaymentResultPayload    `json:"payment_approved_payload"`
+	PaymentRefusedPayload   events.PaymentResultPayload    `json:"payment_refused_payload"`
+	OrderShippedPayload     events.OrderShippedPayload     `json:"order_shipped_payload"`
+	PromotionCategoryA      events.PromotionPayload        `json:"promotion_payload_category_a"`
+	PromotionCategoryB      events.PromotionPayload        `json:"promotion_payload_category_b"`
+	PromotionCategoryC      events.PromotionPayload        `json:"promotion_payload_category_c"`
+}
+
+var validActions = []string{
+	"create",
+	"remove",
+	"estoque-ok",
+	"estoque-indisponivel",
+	"pagamento-aprovado",
+	"pagamento-recusado",
+	"enviado",
+	"promocao-a",
+	"promocao-b",
+	"promocao-c",
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -22,7 +46,8 @@ func main() {
 func run() error {
 	if len(os.Args) != 3 {
 		return fmt.Errorf(
-			"uso: go run . <criar|excluir> <order_id>",
+			"uso: go run . <%v> <order_id>",
+			validActions,
 		)
 	}
 
@@ -33,69 +58,93 @@ func run() error {
 		return fmt.Errorf("identificador do pedido não pode ser vazio")
 	}
 
+	data, err := loadTestData("testdata/events.json")
+	if err != nil {
+		return err
+	}
+
+	exchangeName := events.ExchangeEcommerce
+
 	var (
-		eventType   string
-		payloadJSON []byte
-		err         error
+		eventType string
+		payload   any
 	)
 
 	switch action {
-	case "criar":
-		order := events.OrderCreatedPayload{
-			OrderID:    orderID,
-			CustomerID: "user_001",
-			Items: []events.OrderItem{
-				{
-					ProductID: "prod_001",
-					Name:      "Produto A",
-					Quantity:  2,
-					UnitPrice: 10,
-				},
-				{
-					ProductID: "prod_002",
-					Name:      "Produto B",
-					Quantity:  1,
-					UnitPrice: 20,
-				},
-			},
-			Total: 40,
-		}
-
+	case "create":
+		p := data.OrderCreatedPayload
+		p.OrderID = orderID
 		eventType = events.PedidoCriado
-		payloadJSON, err = json.Marshal(order)
+		payload = p
 
-	case "excluir":
-		reference := events.OrderReferencePayload{
-			OrderID: orderID,
+	case "remove":
+		p := data.OrderReferencePayload
+		p.OrderID = orderID
+		eventType = events.PedidoExcluido
+		payload = p
+
+	case "estoque-ok":
+		// pedido.estoque_ok só precisa identificar o pedido, por isso reaproveita
+		// OrderReferencePayload usa o mesmo formato usado em pedido.excluido.
+		p := data.OrderReferencePayload
+		p.OrderID = orderID
+		eventType = events.PedidoEstoqueOk
+		payload = p
+
+	case "estoque-indisponivel":
+		p := data.StockUnavailablePayload
+		p.OrderID = orderID
+		eventType = events.EstoqueIndisponivel
+		payload = p
+
+	case "pagamento-aprovado":
+		p := data.PaymentApprovedPayload
+		p.OrderID = orderID
+		eventType = events.PagamentoAprovado
+		payload = p
+
+	case "pagamento-recusado":
+		p := data.PaymentRefusedPayload
+		p.OrderID = orderID
+		eventType = events.PagamentoRecusado
+		payload = p
+
+	case "enviado":
+		p := data.OrderShippedPayload
+		p.OrderID = orderID
+		eventType = events.PedidoEnviado
+		payload = p
+
+	case "promocao-a", "promocao-b", "promocao-c":
+		// Promoções nao sao referentes a um pedido
+		// o <order_id> do CLI eh ignorado aqui e o payload vem pronto de testdata/events.json
+		exchangeName = events.ExchangePromocoes
+
+		promotions := map[string]events.PromotionPayload{
+			"promocao-a": data.PromotionCategoryA,
+			"promocao-b": data.PromotionCategoryB,
+			"promocao-c": data.PromotionCategoryC,
+		}
+		routingKeys := map[string]string{
+			"promocao-a": events.PromocaoCategoriaA,
+			"promocao-b": events.PromocaoCategoriaB,
+			"promocao-c": events.PromocaoCategoriaC,
 		}
 
-		eventType = events.PedidoExcluido
-		payloadJSON, err = json.Marshal(reference)
+		eventType = routingKeys[action]
+		payload = promotions[action]
 
 	default:
 		return fmt.Errorf(
-			"ação desconhecida: %s; utilize criar ou excluir",
+			"ação inválida: %s (use uma de %v)",
 			action,
+			validActions,
 		)
 	}
 
+	envelope, err := misc.MountEnvelope(payload, eventType, "EcommerceService", "")
 	if err != nil {
-		return fmt.Errorf("erro ao serializar payload: %w", err)
-	}
-
-	// Gera um identificador aleatório para esta publicação.
-	var eventIDBytes [16]byte
-	if _, err := rand.Read(eventIDBytes[:]); err != nil {
-		return fmt.Errorf("erro ao gerar identificador do evento: %w", err)
-	}
-
-	envelope := events.EventEnvelope{
-		EventID:   hex.EncodeToString(eventIDBytes[:]),
-		EventType: eventType,
-		Producer:  "EcommerceService",
-		Timestamp: time.Now(),
-		Payload:   payloadJSON,
-		Signature: "",
+		return err
 	}
 
 	connection, err := rabbitmq.Connect()
@@ -116,7 +165,7 @@ func run() error {
 
 	if err := rabbitmq.PublishEvent(
 		channel,
-		events.ExchangeEcommerce,
+		exchangeName,
 		eventType,
 		envelope,
 	); err != nil {
@@ -131,4 +180,20 @@ func run() error {
 	)
 
 	return nil
+}
+
+// loadTestData abre e decodifica os exemplos usados para montar publicações manuais
+func loadTestData(path string) (*testData, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao abrir dados de teste: %w", err)
+	}
+	defer file.Close()
+
+	var data testData
+	if err := json.NewDecoder(file).Decode(&data); err != nil {
+		return nil, fmt.Errorf("erro ao decodificar dados de teste: %w", err)
+	}
+
+	return &data, nil
 }

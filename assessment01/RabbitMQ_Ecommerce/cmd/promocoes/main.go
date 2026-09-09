@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"RabbitMQ_Ecommerce/microsservices/ms-principal"
+	"RabbitMQ_Ecommerce/microservices/ms-principal"
 )
 
 func main() {
