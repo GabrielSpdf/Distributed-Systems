@@ -16,6 +16,8 @@ func main() {
 }
 
 func run() error {
+	var orderID int = 1
+
 	msPrincipal, err := msprincipal.InitMSPrincipal()
 	if err != nil {
 		return err
@@ -55,8 +57,23 @@ func run() error {
 			// Visualizar produtos
 		case 2:
 			// Realizar pedido
+			err := msprincipal.PublishCreateOrder(msPrincipal.Channel, orderID)
+			if err != nil {
+				return err
+			}
+			orderID += 1
+
 		case 3:
 			// Excluir pedido
+			order, err := msprincipal.ShowOrders()
+			if err != nil {
+				return err
+			}
+
+			err = msprincipal.PublishDeleteOrder(msPrincipal.Channel, order)
+			if err != nil {
+				return err
+			}
 		case 4:
 			// Consultar pedidos realizados
 		case 5:
