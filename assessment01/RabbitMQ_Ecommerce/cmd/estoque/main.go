@@ -3,9 +3,10 @@ package main
 import (
 	"log"
 	"fmt"
-	"time"
 
-	"RabbitMQ_Ecommerce/microsservices/ms-principal"
+	"RabbitMQ_Ecommerce/microsservices/ms-estoque"
+	"RabbitMQ_Ecommerce/utils/rabbitmq"
+	"RabbitMQ_Ecommerce/utils/events"
 )
 
 func main() {
@@ -16,56 +17,32 @@ func main() {
 }
 
 func run() error {
-	msPrincipal, err := msprincipal.InitMSPrincipal()
+	msEstoque, err := msestoque.InitMSEstoque()
 	if err != nil {
 		return err
 	}
 
-	fmt.Print("[SUCESSO] Microsserviço principal inicializado com sucesso")
-	time.Sleep(3 * time.Second)
-	fmt.Print("\033[H\033[2J")
+	fmt.Println("[SUCESSO] Microsserviço estoque inicializado com sucesso")
 
-	defer msPrincipal.Connection.Close()
-	defer msPrincipal.Channel.Close()
+	defer msEstoque.Connection.Close()
+	defer msEstoque.Channel.Close()
 
 	fmt.Println("==================================================================")
-	fmt.Println("          BEM-VINDO AO SISTEMA DISTRIBUÍDO DE E-COMMERCE          ")
+	fmt.Println("                      MICROSSERVIÇO ESTOQUE                       ")
+	fmt.Println("==================================================================")
 
-	var exit bool 
-
-	for !exit {
-		fmt.Println("==================================================================")
-		fmt.Println("                         MENU PRINCIPAL                           ")
-		fmt.Println("==================================================================")
-		fmt.Println("1. Visualizar produtos")
-		fmt.Println("2. Realizar pedido")
-		fmt.Println("3. Excluir pedido")
-		fmt.Println("4. Consultar pedidos realizados")
-		fmt.Println("5. Sair")
-
-		var option int
-		fmt.Print("Escolha uma opção: ")
-		_, err := fmt.Scan(&option)
-		if err != nil {
-			return err
-		}
-
-		switch option {
-		case 1:
-			// Visualizar produtos
-		case 2:
-			// Realizar pedido
-		case 3:
-			// Excluir pedido
-		case 4:
-			// Consultar pedidos realizados
-		case 5:
-			// Sair
-			exit = true
-		default:
-			fmt.Println("[ERRO] Opção inválida! Selecione uma opção válida.")
-		}
+	stock := map[string]int{
+		"product_001": 10,
+		"product_002": 5,
 	}
 
-	return nil
+	reservations := make(map[string]events.Order)
+
+	return rabbitmq.ConsumeEvents(
+		msEstoque.Channel,
+		msEstoque.QueueName,
+		func(envelope events.EventEnvelope) error {
+			return msestoque.HandleStockEvent(envelope, stock, reservations, msEstoque.Channel)
+		},
+	)
 }
