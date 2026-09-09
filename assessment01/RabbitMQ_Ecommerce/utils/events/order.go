@@ -10,15 +10,14 @@ type Product struct {
 
 // Representa um produto e sua respectiva quantidade dentro de um pedido
 type OrderItem struct {
-	ProductID string  `json:"product_id"`
-	Name      string  `json:"name"`
-	Quantity  int     `json:"quantity"`
-	UnitPrice float64 `json:"unit_price"`
+	Product   Product  `json:"product"`
+	Quantity  int      `json:"quantity"`
+	Price     float64  `json:"price"`
 }
 
 // Representa um pedido mantido pelo microsserviço Principal
 type Order struct {
-	ID         string      `json:"id"`
+	OrderID    string      `json:"order_id"`
 	CustomerID string      `json:"customer_id"`
 	Items      []OrderItem `json:"items"`
 	Total      float64     `json:"total"`

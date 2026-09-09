@@ -49,7 +49,7 @@ func DeclareExchanges(channel *amqp.Channel) error {
 	if err != nil {
 		return err
 	}
-	log.Println("[✓] Exchange Ecommerce [direct] declarada com sucesso")
+	log.Println("[SUCESSO] Exchange Ecommerce [direct] declarada com sucesso")
 
 	err = DeclareExchange(
 		channel,
@@ -59,7 +59,7 @@ func DeclareExchanges(channel *amqp.Channel) error {
 	if err != nil {
 		return err
 	}
-	log.Println("[✓] Exchange Promoções [topic] declarada com sucesso")
+	log.Println("[SUCESSO] Exchange Promoções [topic] declarada com sucesso")
 
 	return nil
 }
