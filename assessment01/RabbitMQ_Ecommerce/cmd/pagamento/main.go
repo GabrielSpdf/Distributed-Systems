@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"RabbitMQ_Ecommerce/microservices/ms-pagamento"
@@ -10,6 +11,7 @@ import (
 
 func main() {
 	if err := run(); err != nil {
+		log.Println("[ERRO] Erro ao executar o sistema:", err)
 		log.Fatal(err)
 	}
 }
@@ -19,27 +21,20 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("[SUCESSO] Microsserviço pagamento inicializado com sucesso")
+
 	defer msPagamento.Connection.Close()
 	defer msPagamento.Channel.Close()
 
-	log.Printf(
-		"[✓] Pagamento aguardando eventos na fila %s",
-		msPagamento.QueueName,
-	)
+	fmt.Println("==================================================================")
+	fmt.Println("                      MICROSSERVIÇO PAGAMENTO                     ")
+	fmt.Println("==================================================================")
 
 	return rabbitmq.ConsumeEvents(
 		msPagamento.Channel,
 		msPagamento.QueueName,
-		handlePaymentEvent,
+		func(envelope events.EventEnvelope) error {
+			return mspagamento.HandlePaymentEvent(envelope, msPagamento.Channel)
+		},
 	)
-}
-
-// handlePaymentEvent é o ponto de extensão para a regra de negócio do
-// Pagamento (aprovação/recusa). TODO: implementar conforme o cronograma.
-func handlePaymentEvent(envelope events.EventEnvelope) error {
-	log.Printf(
-		"[TODO] Pagamento recebeu evento %s (ainda não processado)",
-		envelope.EventType,
-	)
-	return nil
 }
