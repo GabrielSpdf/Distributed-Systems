@@ -50,8 +50,6 @@ func InitMSPagamento() (
 	}
 	log.Println("[SUCESSO] Fila pagamento declarada")
 
-	// pedido.excluido pode ser adicionado aqui caso o enunciado exija que o
-	// Pagamento também trate cancelamentos de pedidos ainda não processados.
 	for _, routingKey := range []string{
 		events.PedidoEstoqueOk,
 	} {
@@ -75,4 +73,23 @@ func InitMSPagamento() (
 	}
 
 	return runTime, nil
+}
+
+func HandlePaymentEvent(
+	envelope events.EventEnvelope,
+	payment map[string]int,
+	channel *amqp.Channel,
+) error {
+	switch envelope.EventType {
+	case events.PagamentoAprovado:
+	case events.PagamentoRecusado:
+	}
+}
+
+func PublishPaymentOk() {
+
+}
+
+func PublishPaymentNok() {
+
 }
