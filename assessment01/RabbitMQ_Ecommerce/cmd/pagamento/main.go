@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	mspagamento "RabbitMQ_Ecommerce/microservices/ms-pagamento"
+	"RabbitMQ_Ecommerce/microservices/ms-pagamento"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
@@ -15,21 +15,21 @@ func main() {
 }
 
 func run() error {
-	runtime, err := mspagamento.InitMSPagamento()
+	msPagamento, err := mspagamento.InitMSPagamento()
 	if err != nil {
 		return err
 	}
-	defer runtime.Connection.Close()
-	defer runtime.Channel.Close()
+	defer msPagamento.Connection.Close()
+	defer msPagamento.Channel.Close()
 
 	log.Printf(
 		"[✓] Pagamento aguardando eventos na fila %s",
-		runtime.QueueName,
+		msPagamento.QueueName,
 	)
 
 	return rabbitmq.ConsumeEvents(
-		runtime.Channel,
-		runtime.QueueName,
+		msPagamento.Channel,
+		msPagamento.QueueName,
 		handlePaymentEvent,
 	)
 }

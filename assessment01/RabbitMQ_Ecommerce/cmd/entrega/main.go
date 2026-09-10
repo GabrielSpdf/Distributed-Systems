@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	msentrega "RabbitMQ_Ecommerce/microservices/ms-entrega"
+	"RabbitMQ_Ecommerce/microservices/ms-entrega"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
@@ -15,21 +15,21 @@ func main() {
 }
 
 func run() error {
-	runtime, err := msentrega.InitMSEntrega()
+	msEntrega, err := msentrega.InitMSEntrega()
 	if err != nil {
 		return err
 	}
-	defer runtime.Connection.Close()
-	defer runtime.Channel.Close()
+	defer msEntrega.Connection.Close()
+	defer msEntrega.Channel.Close()
 
 	log.Printf(
 		"Entrega aguardando eventos na fila %s",
-		runtime.QueueName,
+		msEntrega.QueueName,
 	)
 
 	return rabbitmq.ConsumeEvents(
-		runtime.Channel,
-		runtime.QueueName,
+		msEntrega.Channel,
+		msEntrega.QueueName,
 		handleDeliveryEvent,
 	)
 }
