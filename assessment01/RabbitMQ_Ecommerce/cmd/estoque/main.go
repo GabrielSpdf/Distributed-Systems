@@ -4,7 +4,7 @@ import (
 	"log"
 	"fmt"
 
-	"RabbitMQ_Ecommerce/microsservices/ms-estoque"
+	"RabbitMQ_Ecommerce/microservices/ms-estoque"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
 	"RabbitMQ_Ecommerce/utils/events"
 )

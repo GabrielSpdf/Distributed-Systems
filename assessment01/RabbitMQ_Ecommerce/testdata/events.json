@@ -1,0 +1,123 @@
+{
+    "product": {
+        "id": "product_001",
+        "name": "Detergente",
+        "category": "Limpeza",
+        "price": 7
+    },
+    "order_item": {
+        "product": {
+            "id": "product_001",
+            "name": "Detergente",
+            "category": "Limpeza",
+            "price": 7
+        },
+        "quantity": 1,
+        "price": 7
+    },
+    "order": {
+        "order_id": "10",
+        "customer_id": "101",
+        "items": [
+            {
+                "product": {
+                    "id": "product_001",
+                    "name": "Detergente",
+                    "category": "Limpeza",
+                    "price": 7
+                },
+                "quantity": 1,
+                "price": 7
+            }
+        ],
+        "total": 7,
+        "status": "CRIADO"
+    },
+
+    "order_created_payload": {
+        "order_id": "10",
+        "customer_id": "101",
+        "items": [
+            {
+                "product": {
+                    "id": "product_001",
+                    "name": "Detergente",
+                    "category": "Limpeza",
+                    "price": 7
+                },
+                "quantity": 1,
+                "price": 7
+            }
+        ],
+        "total": 7
+    },
+    "order_reference_payload": {
+        "order_id": "10"
+    },
+    "stock_unavailable_payload": {
+        "order_id": "10",
+        "product_id": "product_001",
+        "reason": "Estoque insuficiente"
+    },
+    "payment_approved_payload": {
+        "order_id": "10"
+    },
+    "payment_refused_payload": {
+        "order_id": "10",
+        "reason": "Cartão recusado pela operadora"
+    },
+    "order_shipped_payload": {
+        "order_id": "10",
+        "invoice_id": "INV-10",
+        "tracking_code": "BR123456789"
+    },
+    "promotion_payload_category_a": {
+        "product_id": "product_001",
+        "product_name": "Detergente",
+        "category": "Limpeza",
+        "discount_percentage": 10,
+        "original_price": 7,
+        "promotional_price": 6.3
+    },
+    "promotion_payload_category_b": {
+        "product_id": "2",
+        "product_name": "Sabonete",
+        "category": "Higiene",
+        "discount_percentage": 15,
+        "original_price": 4,
+        "promotional_price": 3.4
+    },
+    "promotion_payload_category_c": {
+        "product_id": "3",
+        "product_name": "Arroz",
+        "category": "Alimentos",
+        "discount_percentage": 5,
+        "original_price": 20,
+        "promotional_price": 19
+    },
+
+    "envelope_example": {
+        "event_id": "evt-exemplo-0001",
+        "event_type": "pedido.criado",
+        "producer": "EcommerceService",
+        "timestamp": "2026-01-01T12:00:00Z",
+        "payload": {
+            "order_id": "10",
+            "customer_id": "101",
+            "items": [
+                {
+                    "product": {
+                        "id": "product_001",
+                        "name": "Detergente",
+                        "category": "Limpeza",
+                        "price": 7
+                    },
+                    "quantity": 1,
+                    "price": 7
+                }
+            ],
+            "total": 7
+        },
+        "signature": ""
+    }
+}
