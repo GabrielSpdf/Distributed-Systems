@@ -19,7 +19,8 @@ const (
 
 // Define as constantes para os eventos obrigatórios que serão publicados/consumidos pela Exchange Promoções (Tipo Topic)
 const (
-	PromocaoCategoriaA = "promocao.categoria.A"
-	PromocaoCategoriaB = "promocao.categoria.B"
-	PromocaoCategoriaC = "promocao.categoria.C"
+	PromocaoCategoriaA = "promocao.categoria.limpeza"
+	PromocaoCategoriaB = "promocao.categoria.alimentos"
+	PromocaoCategoriaC = "promocao.categoria.eletronicos"
+	AllPromotions      = "promocao.categoria.*"
 )
