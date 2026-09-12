@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"RabbitMQ_Ecommerce/microservices/ms-entrega"
@@ -10,6 +11,7 @@ import (
 
 func main() {
 	if err := run(); err != nil {
+		log.Println("[ERRO] Erro ao executar o sistema:", err)
 		log.Fatal(err)
 	}
 }
@@ -19,27 +21,20 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("[SUCESSO] Microsserviço entrega inicializado com sucesso")
+
 	defer msEntrega.Connection.Close()
 	defer msEntrega.Channel.Close()
 
-	log.Printf(
-		"Entrega aguardando eventos na fila %s",
-		msEntrega.QueueName,
-	)
+	fmt.Println("==================================================================")
+	fmt.Println("                      MICROSSERVIÇO ENTREGA                       ")
+	fmt.Println("==================================================================")
 
 	return rabbitmq.ConsumeEvents(
 		msEntrega.Channel,
 		msEntrega.QueueName,
-		handleDeliveryEvent,
+		func(envelope events.EventEnvelope) error {
+			return msentrega.HandleDeliveryEvent(envelope, msEntrega.Channel)
+		},
 	)
-}
-
-// handleDeliveryEvent é o ponto de extensão para a regra de negócio da
-// Entrega (nota fiscal, rastreio). TODO: implementar conforme o cronograma.
-func handleDeliveryEvent(envelope events.EventEnvelope) error {
-	log.Printf(
-		"[TODO] Entrega recebeu evento %s (ainda não processado)",
-		envelope.EventType,
-	)
-	return nil
 }

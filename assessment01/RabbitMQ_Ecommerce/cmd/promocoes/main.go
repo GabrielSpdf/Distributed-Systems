@@ -1,11 +1,12 @@
 package main
 
 import (
-	"log"
 	"fmt"
+	"log"
 	"time"
 
-	"RabbitMQ_Ecommerce/microservices/ms-principal"
+	"RabbitMQ_Ecommerce/microservices/ms-promocoes"
+	"RabbitMQ_Ecommerce/utils/inventory"
 )
 
 func main() {
@@ -16,56 +17,48 @@ func main() {
 }
 
 func run() error {
-	msPrincipal, err := msprincipal.InitMSPrincipal()
+	msPromocoes, err := mspromocoes.InitMSPromocoes()
+	if err != nil {
+		return err
+	}
+	fmt.Println("[SUCESSO] Microsserviço promocoes inicializado com sucesso")
+
+	defer msPromocoes.Connection.Close()
+	defer msPromocoes.Channel.Close()
+
+	fmt.Println("==================================================================")
+	fmt.Println("                      MICROSSERVIÇO PROMOCOES                     ")
+	fmt.Println("==================================================================")
+
+	inventoryData, err := inventory.Load("inventory.json")
 	if err != nil {
 		return err
 	}
 
-	fmt.Print("[SUCESSO] Microsserviço principal inicializado com sucesso")
-	time.Sleep(3 * time.Second)
-	fmt.Print("\033[H\033[2J")
+	for {
+		promotion := mspromocoes.GeneratePromotion(inventoryData.Products)
 
-	defer msPrincipal.Connection.Close()
-	defer msPrincipal.Channel.Close()
-
-	fmt.Println("==================================================================")
-	fmt.Println("          BEM-VINDO AO SISTEMA DISTRIBUÍDO DE E-COMMERCE          ")
-
-	var exit bool 
-
-	for !exit {
-		fmt.Println("==================================================================")
-		fmt.Println("                         MENU PRINCIPAL                           ")
-		fmt.Println("==================================================================")
-		fmt.Println("1. Visualizar produtos")
-		fmt.Println("2. Realizar pedido")
-		fmt.Println("3. Excluir pedido")
-		fmt.Println("4. Consultar pedidos realizados")
-		fmt.Println("5. Sair")
-
-		var option int
-		fmt.Print("Escolha uma opção: ")
-		_, err := fmt.Scan(&option)
-		if err != nil {
-			return err
+		routingKey, exists := mspromocoes.RoutingKeyForCategory(promotion.Category)
+		if !exists {
+			log.Printf(
+				"[ERRO] Categoria %s sem routing key mapeada, promoção ignorada",
+				promotion.Category,
+			)
+			time.Sleep(10 * time.Second)
+			continue
 		}
 
-		switch option {
-		case 1:
-			// Visualizar produtos
-		case 2:
-			// Realizar pedido
-		case 3:
-			// Excluir pedido
-		case 4:
-			// Consultar pedidos realizados
-		case 5:
-			// Sair
-			exit = true
-		default:
-			fmt.Println("[ERRO] Opção inválida! Selecione uma opção válida.")
+		if err := mspromocoes.PublishPromotion(msPromocoes.Channel, promotion, routingKey); err != nil {
+			return fmt.Errorf("erro ao publicar promoção: %w", err)
 		}
+
+		log.Printf(
+			"[SUCESSO] Promoção publicada: produto=%s desconto=%.1f%% routing_key=%s",
+			promotion.ProductName,
+			promotion.DiscountPercentage,
+			routingKey,
+		)
+
+		time.Sleep(10 * time.Second)
 	}
-
-	return nil
 }
