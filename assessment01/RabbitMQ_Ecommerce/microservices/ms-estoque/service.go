@@ -245,6 +245,20 @@ func HandleStockEvent(
 				inventoryFileName,
 				stock,
 			); err != nil {
+				// A reserva já modificou os mapas em memória.
+				if releaseErr := ReleaseStock(
+					stock,
+					reservations,
+					payload.OrderID,
+				); releaseErr != nil {
+					return fmt.Errorf(
+						"erro ao persistir baixa do pedido %s e erro ao desfazer reserva: %v; erro original: %w",
+						payload.OrderID,
+						releaseErr,
+						err,
+					)
+				}
+
 				return fmt.Errorf(
 					"erro ao persistir baixa do pedido %s: %w",
 					payload.OrderID,
@@ -252,13 +266,40 @@ func HandleStockEvent(
 				)
 			}
 
-			err := PublishStockOk(
+			if err := PublishStockOk(
 				channel,
 				payload.OrderID,
-			)
-			if err != nil {
+			); err != nil {
+				// Desfaz a alteração em memória.
+				if releaseErr := ReleaseStock(
+					stock,
+					reservations,
+					payload.OrderID,
+				); releaseErr != nil {
+					return fmt.Errorf(
+						"erro ao publicar estoque reservado para o pedido %s e erro ao desfazer reserva: %v; erro original: %w",
+						payload.OrderID,
+						releaseErr,
+						err,
+					)
+				}
+
+				// Persiste o estoque restaurado.
+				if saveErr := inventory.SaveStock(
+					inventoryFileName,
+					stock,
+				); saveErr != nil {
+					return fmt.Errorf(
+						"erro ao publicar estoque reservado para o pedido %s e erro ao persistir rollback: %v; erro original: %w",
+						payload.OrderID,
+						saveErr,
+						err,
+					)
+				}
+
 				return fmt.Errorf(
-					"erro ao publicar pedido.estoque_ok: %w",
+					"erro ao publicar pedido.estoque_ok do pedido %s; reserva desfeita: %w",
+					payload.OrderID,
 					err,
 				)
 			}
@@ -268,7 +309,6 @@ func HandleStockEvent(
 				payload.OrderID,
 			)
 		}
-
 	case events.PedidoExcluido:
 		var payload events.OrderReferencePayload
 

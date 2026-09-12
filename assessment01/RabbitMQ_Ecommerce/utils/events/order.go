@@ -35,6 +35,8 @@ const (
 	StatusPaymentRefused   OrderStatus = "PAGAMENTO_RECUSADO"
 	StatusCancelled        OrderStatus = "CANCELADO"
 	StatusShipped          OrderStatus = "ENVIADO"
+	StatusPending          OrderStatus = "PENDENTE"
+	StatusDeleted          OrderStatus = "EXCLUÍDO"
 )
 
 // Representa o conteúdo do evento pedido.criado

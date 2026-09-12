@@ -168,17 +168,14 @@ func run() error {
 				}
 			}
 
-			orderPayload,err := msprincipal.PublishCreateOrder(msPrincipal.Channel, orderID, orderItems)
-			if err != nil {
-				return err
-			}
+			orderPayload, err := msprincipal.CreateOrder(orderID, orderItems)
 
 			order = events.Order{
 				OrderID:    orderPayload.OrderID,
 				CustomerID: orderPayload.CustomerID,
 				Items:      orderPayload.Items,
 				Total:      orderPayload.Total,
-Status:     events.StatusCreated,
+				Status:     events.StatusPending,
 			}
 
 			if err := msprincipal.AddOrder("data/orders.json", order, orderID); err != nil {
@@ -187,6 +184,19 @@ Status:     events.StatusCreated,
 					order.OrderID,
 					err,
 				)
+			}
+
+			err = msprincipal.PublishCreateOrder(msPrincipal.Channel, orderPayload)
+			if err != nil {
+				err = msprincipal.UpdateOrderStatus("data/orders.json", orderPayload.OrderID, events.StatusCancelled)
+				if err != nil {
+					return fmt.Errorf(
+						"erro ao atualizar status do pedido %s: %w",
+						orderPayload.OrderID,
+						err,
+					)
+				}
+				return err
 			}
 
 		case 3:
@@ -206,8 +216,14 @@ Status:     events.StatusCreated,
 				return err
 			}
 
-			if _, err := msprincipal.FindOrder("data/orders.json", orderID); err != nil {
+			order, err := msprincipal.FindOrder("data/orders.json", orderID); 
+			if err != nil {
 				fmt.Printf("[ERRO] %s\n", err)
+				continue
+			}
+
+			if order.Status == events.StatusCancelled || order.Status == events.StatusPaymentRefused || order.Status == events.StatusStockUnavailable {
+				fmt.Printf("[ERRO] Pedido %s possui status %s e não pode ser excluído\n", orderID, order.Status)
 				continue
 			}
 
@@ -216,7 +232,7 @@ Status:     events.StatusCreated,
 				return err
 			}
 
-			err = msprincipal.UpdateOrderStatus("data/orders.json", orderID, events.StatusCancelled)
+			err = msprincipal.UpdateOrderStatus("data/orders.json", orderID, events.StatusDeleted)
 			if err != nil {
 				return fmt.Errorf(
 					"erro ao atualizar status do pedido %s: %w",

@@ -85,7 +85,7 @@ func InitMSPrincipal() (
 	return runTime, nil
 }
 
-func PublishCreateOrder(channel *amqp.Channel, orderID int, orderItems []events.OrderItem) (events.OrderCreatedPayload, error) {
+func CreateOrder(orderID int, orderItems []events.OrderItem) (events.OrderCreatedPayload, error) {
 	fmt.Println("==================================================================")
 	fmt.Printf("                         CRIANDO PEDIDO - %d               \n", orderID)
 	fmt.Println("==================================================================")
@@ -118,6 +118,11 @@ func PublishCreateOrder(channel *amqp.Channel, orderID int, orderItems []events.
 		Total:      total,
 	}
 
+	return order, nil
+}
+
+func PublishCreateOrder(channel *amqp.Channel, order events.OrderCreatedPayload) error {
+	
 	envelope, err := misc.MountEnvelope(
 		order,
 		events.PedidoCriado,
@@ -125,7 +130,7 @@ func PublishCreateOrder(channel *amqp.Channel, orderID int, orderItems []events.
 		"signature",
 	)		
 	if err != nil {
-		return events.OrderCreatedPayload{}, fmt.Errorf("erro ao montar envelope: %w", err)
+		return fmt.Errorf("erro ao montar envelope: %w", err)
 	}
 
 	if err := rabbitmq.PublishEvent(
@@ -134,7 +139,7 @@ func PublishCreateOrder(channel *amqp.Channel, orderID int, orderItems []events.
 		events.PedidoCriado,
 		envelope,
 	); err != nil {
-		return events.OrderCreatedPayload{}, fmt.Errorf("erro ao enviar evento: %w", err)
+		return fmt.Errorf("erro ao enviar evento: %w", err)
 	}
 
 	fmt.Printf(
@@ -144,7 +149,7 @@ func PublishCreateOrder(channel *amqp.Channel, orderID int, orderItems []events.
 		order.Total,
 	)
 
-	return order, nil
+	return nil
 }
 
 func PublishDeleteOrder(channel *amqp.Channel, orderID string) error {
@@ -405,13 +410,6 @@ func UpdateOrderStatus(
 			currentStatus := ordersData.Orders[index].Status
 
 			if currentStatus == events.StatusCancelled || currentStatus == events.StatusShipped {
-				log.Printf(
-					"[AVISO] Pedido %s já está em estado final (%s), ignorando atualização para %s",
-					orderID,
-					currentStatus,
-					status,
-				)
-
 				return nil
 			}
 
