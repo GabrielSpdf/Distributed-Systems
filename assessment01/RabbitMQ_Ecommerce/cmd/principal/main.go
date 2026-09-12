@@ -55,6 +55,12 @@ func run() error {
 	var exit bool
 
 	for !exit {
+		select {
+		case err := <-consumerErrors:
+			return fmt.Errorf("consumidor de eventos encerrado: %w", err)
+		default:
+		}
+
 		fmt.Println("==================================================================")
 		fmt.Println("                         MENU PRINCIPAL                           ")
 		fmt.Println("==================================================================")
@@ -198,6 +204,11 @@ Status:     events.StatusCreated,
 			orderID, err := msprincipal.SelectOrderToDelete()
 			if err != nil {
 				return err
+			}
+
+			if _, err := msprincipal.FindOrder("data/orders.json", orderID); err != nil {
+				fmt.Printf("[ERRO] %s\n", err)
+				continue
 			}
 
 			err = msprincipal.PublishDeleteOrder(msPrincipal.Channel, orderID)

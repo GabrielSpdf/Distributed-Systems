@@ -402,6 +402,19 @@ func UpdateOrderStatus(
 
 	for index := range ordersData.Orders {
 		if ordersData.Orders[index].OrderID == orderID {
+			currentStatus := ordersData.Orders[index].Status
+
+			if currentStatus == events.StatusCancelled || currentStatus == events.StatusShipped {
+				log.Printf(
+					"[AVISO] Pedido %s já está em estado final (%s), ignorando atualização para %s",
+					orderID,
+					currentStatus,
+					status,
+				)
+
+				return nil
+			}
+
 			ordersData.Orders[index].Status = status
 
 			if err := SaveOrders(filePath, ordersData); err != nil {
