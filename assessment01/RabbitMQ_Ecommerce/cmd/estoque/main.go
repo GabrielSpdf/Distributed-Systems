@@ -47,8 +47,12 @@ func run() error {
 
 	reservations := make(map[string]events.Order)
 
-	for _, order := range ordersData.Orders {
-		reservations[order.OrderID] = order
+for _, order := range ordersData.Orders {
+		if order.Status == events.StatusStockReserved ||
+			order.Status == events.StatusPaymentApproved ||
+			order.Status == events.StatusShipped {
+			reservations[order.OrderID] = order
+		}
 	}
 
 	return rabbitmq.ConsumeEvents(
