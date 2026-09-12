@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	msentrega "RabbitMQ_Ecommerce/microservices/ms-entrega"
+	"RabbitMQ_Ecommerce/microservices/ms-entrega"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )

@@ -1,13 +1,13 @@
 {
     "product": {
-        "id": "product_001",
+        "id": "PRD-001",
         "name": "Detergente",
         "category": "Limpeza",
         "price": 7
     },
     "order_item": {
         "product": {
-            "id": "product_001",
+            "id": "PRD-001",
             "name": "Detergente",
             "category": "Limpeza",
             "price": 7
@@ -21,7 +21,7 @@
         "items": [
             {
                 "product": {
-                    "id": "product_001",
+                    "id": "PRD-001",
                     "name": "Detergente",
                     "category": "Limpeza",
                     "price": 7
@@ -40,7 +40,7 @@
         "items": [
             {
                 "product": {
-                    "id": "product_001",
+                    "id": "PRD-001",
                     "name": "Detergente",
                     "category": "Limpeza",
                     "price": 7
@@ -56,7 +56,7 @@
     },
     "stock_unavailable_payload": {
         "order_id": "10",
-        "product_id": "product_001",
+        "product_id": "PRD-001",
         "reason": "Estoque insuficiente"
     },
     "payment_approved_payload": {
@@ -72,7 +72,7 @@
         "tracking_code": "BR123456789"
     },
     "promotion_payload_category_a": {
-        "product_id": "product_001",
+        "product_id": "PRD-001",
         "product_name": "Detergente",
         "category": "Limpeza",
         "discount_percentage": 10,
@@ -80,20 +80,20 @@
         "promotional_price": 6.3
     },
     "promotion_payload_category_b": {
-        "product_id": "2",
-        "product_name": "Sabonete",
-        "category": "Higiene",
-        "discount_percentage": 15,
-        "original_price": 4,
-        "promotional_price": 3.4
-    },
-    "promotion_payload_category_c": {
-        "product_id": "3",
+        "product_id": "PRD-003",
         "product_name": "Arroz",
         "category": "Alimentos",
+        "discount_percentage": 15,
+        "original_price": 25,
+        "promotional_price": 21.25
+    },
+    "promotion_payload_category_c": {
+        "product_id": "PRD-005",
+        "product_name": "Fone de ouvido",
+        "category": "Eletrônicos",
         "discount_percentage": 5,
-        "original_price": 20,
-        "promotional_price": 19
+        "original_price": 80,
+        "promotional_price": 76
     },
 
     "envelope_example": {
@@ -107,7 +107,7 @@
             "items": [
                 {
                     "product": {
-                        "id": "product_001",
+                        "id": "PRD-001",
                         "name": "Detergente",
                         "category": "Limpeza",
                         "price": 7
