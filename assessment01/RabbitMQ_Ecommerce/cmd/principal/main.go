@@ -172,7 +172,7 @@ func run() error {
 				CustomerID: orderPayload.CustomerID,
 				Items:      orderPayload.Items,
 				Total:      orderPayload.Total,
-				Status:     events.PedidoCriado,
+Status:     events.StatusCreated,
 			}
 
 			if err := msprincipal.AddOrder("data/orders.json", order, orderID); err != nil {
