@@ -69,3 +69,8 @@ type OrderShippedPayload struct {
 	InvoiceID    string `json:"invoice_id"`
 	TrackingCode string `json:"tracking_code"`
 }
+
+type InventoryData struct {
+	Products []Product        `json:"products"`
+	Stock    map[string]int   `json:"stock"`
+}

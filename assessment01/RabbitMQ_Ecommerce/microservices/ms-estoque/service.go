@@ -8,6 +8,7 @@ import (
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/misc"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
+	"RabbitMQ_Ecommerce/utils/inventory"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -197,6 +198,7 @@ func HandleStockEvent(
 	stock map[string]int,
 	reservations map[string]events.Order,
 	channel *amqp.Channel,
+	inventoryFileName string,
 ) error {
 	switch envelope.EventType {
 	case events.PedidoCriado:
@@ -239,6 +241,17 @@ func HandleStockEvent(
 				)
 			}
 		} else {
+			if err := inventory.SaveStock(
+				inventoryFileName,
+				stock,
+			); err != nil {
+				return fmt.Errorf(
+					"erro ao persistir baixa do pedido %s: %w",
+					payload.OrderID,
+					err,
+				)
+			}
+
 			err := PublishStockOk(
 				channel,
 				payload.OrderID,
@@ -278,6 +291,17 @@ func HandleStockEvent(
 			)
 		}
 
+		if err := inventory.SaveStock(
+			inventoryFileName,
+			stock,
+		); err != nil {
+			return fmt.Errorf(
+				"erro ao persistir devolução do pedido %s: %w",
+				payload.OrderID,
+				err,
+			)
+		}
+
 		log.Printf(
 			"[SUCESSO] Exclusão realizada com sucesso para o pedido %s",
 			payload.OrderID,
@@ -289,8 +313,6 @@ func HandleStockEvent(
 			envelope.EventType,
 		)
 	}
-
-	log.Printf("Estoque atual: %v", stock)
 
 	return nil
 }

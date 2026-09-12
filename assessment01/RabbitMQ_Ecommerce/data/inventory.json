@@ -1,0 +1,48 @@
+{
+  "products": [
+    {
+      "id": "PRD-001",
+      "name": "Detergente",
+      "category": "Limpeza",
+      "price": 7
+    },
+    {
+      "id": "PRD-002",
+      "name": "Sabão em pó",
+      "category": "Limpeza",
+      "price": 18.5
+    },
+    {
+      "id": "PRD-003",
+      "name": "Arroz",
+      "category": "Alimentos",
+      "price": 25
+    },
+    {
+      "id": "PRD-004",
+      "name": "Café",
+      "category": "Alimentos",
+      "price": 16
+    },
+    {
+      "id": "PRD-005",
+      "name": "Fone de ouvido",
+      "category": "Eletrônicos",
+      "price": 80
+    },
+    {
+      "id": "PRD-006",
+      "name": "Teclado",
+      "category": "Eletrônicos",
+      "price": 150
+    }
+  ],
+  "stock": {
+    "PRD-001": 5,
+    "PRD-002": 8,
+    "PRD-003": 20,
+    "PRD-004": 15,
+    "PRD-005": 5,
+    "PRD-006": 4
+  }
+}
