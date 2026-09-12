@@ -7,6 +7,8 @@ import (
 	"RabbitMQ_Ecommerce/microservices/ms-estoque"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
 	"RabbitMQ_Ecommerce/utils/events"
+	"RabbitMQ_Ecommerce/utils/inventory"
+	"RabbitMQ_Ecommerce/microservices/ms-principal"
 )
 
 func main() {
@@ -31,18 +33,29 @@ func run() error {
 	fmt.Println("                      MICROSSERVIÇO ESTOQUE                       ")
 	fmt.Println("==================================================================")
 
-	stock := map[string]int{
-		"product_001": 10,
-		"product_002": 5,
+	inventoryData, err := inventory.Load("inventory.json")
+	if err != nil {
+		return err
+	}
+
+	stock := inventoryData.Stock
+
+	ordersData, err := msprincipal.LoadOrders("data/orders.json")
+	if err != nil {
+		return err
 	}
 
 	reservations := make(map[string]events.Order)
+
+	for _, order := range ordersData.Orders {
+		reservations[order.OrderID] = order
+	}
 
 	return rabbitmq.ConsumeEvents(
 		msEstoque.Channel,
 		msEstoque.QueueName,
 		func(envelope events.EventEnvelope) error {
-			return msestoque.HandleStockEvent(envelope, stock, reservations, msEstoque.Channel)
+			return msestoque.HandleStockEvent(envelope, stock, reservations, msEstoque.Channel, "inventory.json")
 		},
 	)
 }

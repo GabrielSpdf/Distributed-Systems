@@ -81,10 +81,10 @@ func InitMSPagamento() (
 
 func DecideApproval() bool {
 	/*
-		True = Pagamento aprovado (70%)
-		False = Pagamento recusado (30%)
+		True = Pagamento aprovado (85%)
+		False = Pagamento recusado (15%)
 	*/
-	return rand.Float64() > 0.3
+	return rand.Float64() > 0.15
 }
 
 func HandlePaymentEvent(
