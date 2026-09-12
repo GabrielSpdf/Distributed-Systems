@@ -21,7 +21,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("[SUCESSO] Microsserviço pagamento inicializado com sucesso")
+	fmt.Println("[SUCESSO] Microsserviço entrega inicializado com sucesso")
 
 	defer msEntrega.Connection.Close()
 	defer msEntrega.Channel.Close()

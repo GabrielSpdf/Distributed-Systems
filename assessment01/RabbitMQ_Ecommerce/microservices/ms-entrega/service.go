@@ -96,7 +96,7 @@ func HandleDeliveryEvent(
 		invoiceID := fmt.Sprintf("INV-%s", payload.OrderID)
 		trackingCode := fmt.Sprintf("BR%sBR", payload.OrderID)
 
-		err := PublishDeliverySent(
+		err := PublishOrderShipped(
 			channel,
 			payload.OrderID,
 			invoiceID,
@@ -125,7 +125,7 @@ func HandleDeliveryEvent(
 	return nil
 }
 
-func PublishDeliverySent(
+func PublishOrderShipped(
 	channel *amqp.Channel,
 	orderId string,
 	invoiceID string,
