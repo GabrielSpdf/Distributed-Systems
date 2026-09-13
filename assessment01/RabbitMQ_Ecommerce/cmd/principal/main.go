@@ -171,6 +171,9 @@ func run() error {
 			}
 
 			orderPayload, err := msprincipal.CreateOrder(orderID, orderItems)
+			if err != nil {
+				return fmt.Errorf("erro ao criar pedido: %w", err)
+			}
 
 			order = events.Order{
 				OrderID:    orderPayload.OrderID,
@@ -190,12 +193,13 @@ func run() error {
 
 			err = msprincipal.PublishCreateOrder(msPrincipal.Channel, msPrincipal.PrivateKey, orderPayload)
 			if err != nil {
-				err = msprincipal.UpdateOrderStatus("data/orders.json", orderPayload.OrderID, events.StatusCancelled)
-				if err != nil {
+				updateStatusErr := msprincipal.UpdateOrderStatus("data/orders.json", orderPayload.OrderID, events.StatusCancelled)
+				if updateStatusErr != nil {
 					return fmt.Errorf(
-						"erro ao atualizar status do pedido %s: %w",
+						"erro ao publicar pedido %s: %w e erro ao atualizar status do pedido: %v",
 						orderPayload.OrderID,
 						err,
+						updateStatusErr,
 					)
 				}
 				return err

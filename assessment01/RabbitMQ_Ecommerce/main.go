@@ -142,7 +142,7 @@ func run() error {
 		)
 	}
 
-	envelope, err := misc.MountEnvelope(payload, eventType, "EcommerceService", "")
+	envelope, err := misc.MountEnvelope(payload, eventType, "EcommerceService")
 	if err != nil {
 		return err
 	}

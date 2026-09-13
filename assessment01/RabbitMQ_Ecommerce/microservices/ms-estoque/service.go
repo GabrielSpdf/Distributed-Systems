@@ -434,7 +434,7 @@ func PublishStockUnavailable(channel *amqp.Channel, privateKey *rsa.PrivateKey, 
 
 	envelope, err := misc.MountSignedEnvelope(
 		payload,
-		events.PedidoEstoqueOk,
+		events.EstoqueIndisponivel,
 		events.ProducerEstoque,
 		privateKey,
 	)

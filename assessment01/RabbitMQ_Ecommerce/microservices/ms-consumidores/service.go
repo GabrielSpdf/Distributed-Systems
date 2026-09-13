@@ -104,7 +104,7 @@ func HandleConsumerEvent(
 
 		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
 			return fmt.Errorf(
-				"erro ao desserializar pedido.criado: %w",
+				"erro ao desserializar promoção: %w",
 				err,
 			)
 		}
@@ -131,7 +131,7 @@ func HandleConsumerEvent(
 
 	default:
 		return fmt.Errorf(
-			"tipo de evento inesperado no Principal: %s",
+			"tipo de evento inesperado no Consumidor: %s",
 			envelope.EventType,
 		)
 	}
