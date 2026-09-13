@@ -10,8 +10,8 @@ import (
 )
 
 type Data struct {
-	Products []events.Product  `json:"products"`
-	Stock    map[string]int    `json:"stock"`
+	Products []events.Product `json:"products"`
+	Stock    map[string]int   `json:"stock"`
 }
 
 func Load(fileName string) (Data, error) {

@@ -1,14 +1,14 @@
 package main
 
 import (
-	"log"
 	"fmt"
+	"log"
 
 	"RabbitMQ_Ecommerce/microservices/ms-estoque"
-	"RabbitMQ_Ecommerce/utils/rabbitmq"
+	"RabbitMQ_Ecommerce/microservices/ms-principal"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/inventory"
-	"RabbitMQ_Ecommerce/microservices/ms-principal"
+	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
 
 func main() {
@@ -55,11 +55,12 @@ func run() error {
 		}
 	}
 
-	return rabbitmq.ConsumeEvents(
+	return rabbitmq.ConsumeSignedEvents(
 		msEstoque.Channel,
 		msEstoque.QueueName,
+		msEstoque.PublicKeys,
 		func(envelope events.EventEnvelope) error {
-			return msestoque.HandleStockEvent(envelope, stock, reservations, msEstoque.Channel, "inventory.json")
+			return msestoque.HandleStockEvent(envelope, stock, reservations, msEstoque.Channel, msEstoque.PrivateKey, "inventory.json")
 		},
 	)
 }

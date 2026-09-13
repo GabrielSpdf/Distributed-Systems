@@ -1,10 +1,12 @@
 package msentrega
 
 import (
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"log"
 
+	"RabbitMQ_Ecommerce/utils/cryptography"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/misc"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
@@ -16,6 +18,8 @@ type Runtime struct {
 	Connection *amqp.Connection
 	Channel    *amqp.Channel
 	QueueName  string
+	PrivateKey *rsa.PrivateKey
+	PublicKeys cryptography.PublicKeyRegistry
 }
 
 func InitMSEntrega() (
@@ -34,6 +38,31 @@ func InitMSEntrega() (
 		return nil, err
 	}
 	log.Println("[SUCESSO] Canal RabbitMQ aberto")
+
+	privateKey, err := cryptography.LoadPrivateKey("keys/ms-entrega/private.pem")
+	if err != nil {
+		channel.Close()
+		connection.Close()
+		return nil, fmt.Errorf(
+			"erro ao carregar chave privada do Entrega: %w",
+			err,
+		)
+	}
+
+	publicKeys, err := cryptography.LoadPublicKeyRegistry(
+		map[string]string{
+			events.ProducerPagamento: "keys/ms-entrega/public_keys/ms-pagamento.pem",
+		},
+	)
+	if err != nil {
+		channel.Close()
+		connection.Close()
+
+		return nil, fmt.Errorf(
+			"erro ao carregar chave pública da Entrega: %w",
+			err,
+		)
+	}
 
 	if err := rabbitmq.DeclareExchanges(channel); err != nil {
 		channel.Close()
@@ -73,6 +102,8 @@ func InitMSEntrega() (
 		Connection: connection,
 		Channel:    channel,
 		QueueName:  deliveryQueue.Name,
+		PrivateKey: privateKey,
+		PublicKeys: publicKeys,
 	}
 
 	return runTime, nil
@@ -81,6 +112,7 @@ func InitMSEntrega() (
 func HandleDeliveryEvent(
 	envelope events.EventEnvelope,
 	channel *amqp.Channel,
+	privateKey *rsa.PrivateKey,
 ) error {
 	var payload events.PaymentResultPayload
 
@@ -98,6 +130,7 @@ func HandleDeliveryEvent(
 
 		err := PublishOrderShipped(
 			channel,
+			privateKey,
 			payload.OrderID,
 			invoiceID,
 			trackingCode,
@@ -127,6 +160,7 @@ func HandleDeliveryEvent(
 
 func PublishOrderShipped(
 	channel *amqp.Channel,
+	privateKey *rsa.PrivateKey,
 	orderId string,
 	invoiceID string,
 	trackingCode string,
@@ -137,11 +171,11 @@ func PublishOrderShipped(
 		TrackingCode: trackingCode,
 	}
 
-	envelope, err := misc.MountEnvelope(
+	envelope, err := misc.MountSignedEnvelope(
 		payload,
 		events.PedidoEnviado,
-		"ms-entrega",
-		"signature",
+		events.ProducerEntrega,
+		privateKey,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)

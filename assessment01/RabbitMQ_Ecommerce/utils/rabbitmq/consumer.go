@@ -4,16 +4,22 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"RabbitMQ_Ecommerce/utils/cryptography"
 	"RabbitMQ_Ecommerce/utils/events"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+type EnvelopeValidator func(
+	envelope events.EventEnvelope,
+) error
+
 // ConsumeEvents recebe mensagens da fila e encaminha cada envelope
 // desserializado ao handler informado.
-func ConsumeEvents(
+func consumeEvents(
 	channel *amqp.Channel,
 	queueName string,
+	validator EnvelopeValidator,
 	handler func(envelope events.EventEnvelope) error,
 ) error {
 	deliveries, err := channel.Consume(
@@ -53,6 +59,25 @@ func ConsumeEvents(
 			continue
 		}
 
+		if validator != nil {
+			if err := validator(envelope); err != nil {
+				fmt.Printf(
+					"[SEGURANÇA] Evento %s descartado: %v\n",
+					envelope.EventID,
+					err,
+				)
+
+				if nackErr := delivery.Nack(false, false); nackErr != nil {
+					return fmt.Errorf(
+						"erro ao rejeitar evento com assinatura inválida: %w",
+						nackErr,
+					)
+				}
+
+				continue
+			}
+		}
+
 		if err := handler(envelope); err != nil {
 			fmt.Printf(
 				"falha ao processar evento %s: %v\n",
@@ -81,4 +106,40 @@ func ConsumeEvents(
 	}
 
 	return nil
+}
+
+func ConsumeEvents(
+	channel *amqp.Channel,
+	queueName string,
+	handler func(envelope events.EventEnvelope) error,
+) error {
+	return consumeEvents(
+		channel,
+		queueName,
+		nil,
+		handler,
+	)
+}
+
+func ConsumeSignedEvents(
+	channel *amqp.Channel,
+	queueName string,
+	publicKeys cryptography.PublicKeyRegistry,
+	handler func(envelope events.EventEnvelope) error,
+) error {
+	validator := func(
+		envelope events.EventEnvelope,
+	) error {
+		return cryptography.VerifyEnvelopeFromProducer(
+			envelope,
+			publicKeys,
+		)
+	}
+
+	return consumeEvents(
+		channel,
+		queueName,
+		validator,
+		handler,
+	)
 }

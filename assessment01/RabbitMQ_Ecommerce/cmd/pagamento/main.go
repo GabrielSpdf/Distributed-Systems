@@ -30,11 +30,12 @@ func run() error {
 	fmt.Println("                      MICROSSERVIÇO PAGAMENTO                     ")
 	fmt.Println("==================================================================")
 
-	return rabbitmq.ConsumeEvents(
+	return rabbitmq.ConsumeSignedEvents(
 		msPagamento.Channel,
 		msPagamento.QueueName,
+		msPagamento.PublicKeys,
 		func(envelope events.EventEnvelope) error {
-			return mspagamento.HandlePaymentEvent(envelope, msPagamento.Channel)
+			return mspagamento.HandlePaymentEvent(envelope, msPagamento.Channel, msPagamento.PrivateKey)
 		},
 	)
 }

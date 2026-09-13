@@ -24,3 +24,11 @@ const (
 	PromocaoCategoriaC = "promocao.categoria.eletronicos"
 	AllPromotions      = "promocao.categoria.*"
 )
+
+const (
+	ProducerPrincipal = "ms-principal"
+	ProducerPromocoes = "ms-promocoes"
+	ProducerEstoque   = "ms-estoque"
+	ProducerPagamento = "ms-pagamento"
+	ProducerEntrega   = "ms-entrega"
+)

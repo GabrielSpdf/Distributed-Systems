@@ -1,16 +1,18 @@
 package msprincipal
 
 import (
+	"crypto/rsa"
+	"encoding/json"
 	"fmt"
 	"log"
-	"encoding/json"
-	"text/tabwriter"
 	"os"
+	"text/tabwriter"
 
+	"RabbitMQ_Ecommerce/utils/cryptography"
 	"RabbitMQ_Ecommerce/utils/events"
-	"RabbitMQ_Ecommerce/utils/rabbitmq"
-	"RabbitMQ_Ecommerce/utils/misc"
 	"RabbitMQ_Ecommerce/utils/inventory"
+	"RabbitMQ_Ecommerce/utils/misc"
+	"RabbitMQ_Ecommerce/utils/rabbitmq"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -19,6 +21,8 @@ type Runtime struct {
 	Connection *amqp.Connection
 	Channel    *amqp.Channel
 	QueueName  string
+	PrivateKey *rsa.PrivateKey
+	PublicKeys cryptography.PublicKeyRegistry
 }
 
 func InitMSPrincipal() (
@@ -38,6 +42,36 @@ func InitMSPrincipal() (
 	}
 	log.Println("[SUCESSO] Canal RabbitMQ aberto")
 
+	privateKey, err := cryptography.LoadPrivateKey("keys/ms-principal/private.pem")
+	if err != nil {
+		channel.Close()
+		connection.Close()
+
+		return nil, fmt.Errorf(
+			"erro ao carregar chave privada do Principal: %w",
+			err,
+		)
+	}
+
+	publicKeys, err := cryptography.LoadPublicKeyRegistry(
+		map[string]string{
+			events.ProducerEstoque: "keys/ms-principal/public_keys/ms-estoque.pem",
+
+			events.ProducerPagamento: "keys/ms-principal/public_keys/ms-pagamento.pem",
+
+			events.ProducerEntrega: "keys/ms-principal/public_keys/ms-entrega.pem",
+		},
+	)
+	if err != nil {
+		channel.Close()
+		connection.Close()
+
+		return nil, fmt.Errorf(
+			"erro ao carregar chave publica do Principal: %w",
+			err,
+		)
+	}
+
 	if err := rabbitmq.DeclareExchanges(channel); err != nil {
 		channel.Close()
 		connection.Close()
@@ -55,7 +89,7 @@ func InitMSPrincipal() (
 		return nil, err
 	}
 	log.Println("[SUCESSO] Fila principal declarada")
-	
+
 	for _, routingKey := range []string{
 		events.PedidoEstoqueOk,
 		events.EstoqueIndisponivel,
@@ -80,6 +114,8 @@ func InitMSPrincipal() (
 		Connection: connection,
 		Channel:    channel,
 		QueueName:  principalQueue.Name,
+		PrivateKey: privateKey,
+		PublicKeys: publicKeys,
 	}
 
 	return runTime, nil
@@ -91,7 +127,7 @@ func CreateOrder(orderID int, orderItems []events.OrderItem) (events.OrderCreate
 	fmt.Println("==================================================================")
 
 	if len(orderItems) == 0 {
-		return events.OrderCreatedPayload{},fmt.Errorf("pedido sem itens")
+		return events.OrderCreatedPayload{}, fmt.Errorf("pedido sem itens")
 	}
 
 	var total float64
@@ -121,14 +157,14 @@ func CreateOrder(orderID int, orderItems []events.OrderItem) (events.OrderCreate
 	return order, nil
 }
 
-func PublishCreateOrder(channel *amqp.Channel, order events.OrderCreatedPayload) error {
-	
-	envelope, err := misc.MountEnvelope(
+func PublishCreateOrder(channel *amqp.Channel, privateKey *rsa.PrivateKey, order events.OrderCreatedPayload) error {
+
+	envelope, err := misc.MountSignedEnvelope(
 		order,
 		events.PedidoCriado,
-		"ms-principal",
-		"signature",
-	)		
+		events.ProducerPrincipal,
+		privateKey,
+	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)
 	}
@@ -152,16 +188,16 @@ func PublishCreateOrder(channel *amqp.Channel, order events.OrderCreatedPayload)
 	return nil
 }
 
-func PublishDeleteOrder(channel *amqp.Channel, orderID string) error {
+func PublishDeleteOrder(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID string) error {
 	payload := events.OrderReferencePayload{
 		OrderID: orderID,
 	}
 
-	envelope, err := misc.MountEnvelope(
+	envelope, err := misc.MountSignedEnvelope(
 		payload,
 		events.PedidoExcluido,
-		"ms-principal",
-		"signature",
+		events.ProducerPrincipal,
+		privateKey,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)
@@ -185,11 +221,11 @@ func SelectOrderToDelete() (string, error) {
 	fmt.Println("==================================================================")
 
 	var order string
-		fmt.Print("Selecione um pedido para deleção: ")
-		_, err := fmt.Scan(&order)
-		if err != nil {
-			return "", err
-		}
+	fmt.Print("Selecione um pedido para deleção: ")
+	_, err := fmt.Scan(&order)
+	if err != nil {
+		return "", err
+	}
 
 	return order, nil
 }
@@ -540,6 +576,7 @@ func HandlePrincipalEvent(
 	envelope events.EventEnvelope,
 	ordersFilePath string,
 	channel *amqp.Channel,
+	privateKey *rsa.PrivateKey,
 ) error {
 	switch envelope.EventType {
 	case events.PedidoEstoqueOk:
@@ -574,9 +611,9 @@ func HandlePrincipalEvent(
 			)
 		}
 
-		err := PublishDeleteOrder(channel, payload.OrderID)
-			if err != nil {
-				return err
+		err := PublishDeleteOrder(channel, privateKey, payload.OrderID)
+		if err != nil {
+			return err
 		}
 
 		if err := UpdateOrderStatus(
@@ -623,9 +660,9 @@ func HandlePrincipalEvent(
 			)
 		}
 
-		err := PublishDeleteOrder(channel, payload.OrderID)
-			if err != nil {
-				return err
+		err := PublishDeleteOrder(channel, privateKey, payload.OrderID)
+		if err != nil {
+			return err
 		}
 
 		if err := UpdateOrderStatus(

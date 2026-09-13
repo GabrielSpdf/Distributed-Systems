@@ -1,5 +1,5 @@
 {
-  "next_order_id": 6,
+  "next_order_id": 8,
   "orders": [
     {
       "order_id": "PED-001",
@@ -100,6 +100,42 @@
       ],
       "total": 160,
       "status": "PAGAMENTO_RECUSADO"
+    },
+    {
+      "order_id": "PED-006",
+      "customer_id": "user_001",
+      "items": [
+        {
+          "product": {
+            "id": "PRD-001",
+            "name": "Detergente",
+            "category": "Limpeza",
+            "price": 7
+          },
+          "quantity": 1,
+          "price": 7
+        }
+      ],
+      "total": 7,
+      "status": "PAGAMENTO_RECUSADO"
+    },
+    {
+      "order_id": "PED-007",
+      "customer_id": "user_001",
+      "items": [
+        {
+          "product": {
+            "id": "PRD-001",
+            "name": "Detergente",
+            "category": "Limpeza",
+            "price": 7
+          },
+          "quantity": 1,
+          "price": 7
+        }
+      ],
+      "total": 7,
+      "status": "ENVIADO"
     }
   ]
 }

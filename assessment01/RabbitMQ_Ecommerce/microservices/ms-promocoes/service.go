@@ -88,8 +88,7 @@ func PublishPromotion(
 	envelope, err := misc.MountEnvelope(
 		payload,
 		routingKey,
-		"ms-promocoes",
-		"signature",
+		events.ProducerPromocoes,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)

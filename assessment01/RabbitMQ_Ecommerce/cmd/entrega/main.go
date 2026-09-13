@@ -30,11 +30,12 @@ func run() error {
 	fmt.Println("                      MICROSSERVIÇO ENTREGA                       ")
 	fmt.Println("==================================================================")
 
-	return rabbitmq.ConsumeEvents(
+	return rabbitmq.ConsumeSignedEvents(
 		msEntrega.Channel,
 		msEntrega.QueueName,
+		msEntrega.PublicKeys,
 		func(envelope events.EventEnvelope) error {
-			return msentrega.HandleDeliveryEvent(envelope, msEntrega.Channel)
+			return msentrega.HandleDeliveryEvent(envelope, msEntrega.Channel, msEntrega.PrivateKey)
 		},
 	)
 }

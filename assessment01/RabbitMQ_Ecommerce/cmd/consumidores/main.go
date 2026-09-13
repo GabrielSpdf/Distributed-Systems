@@ -15,7 +15,6 @@ func main() {
 		log.Fatal("informe o tipo do consumidor: go run . 1 ou go run . 2")
 	}
 
-
 	consumerType := os.Args[1]
 
 	if consumerType != "1" && consumerType != "2" {

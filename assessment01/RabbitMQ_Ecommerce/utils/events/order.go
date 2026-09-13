@@ -10,9 +10,9 @@ type Product struct {
 
 // Representa um produto e sua respectiva quantidade dentro de um pedido
 type OrderItem struct {
-	Product   Product  `json:"product"`
-	Quantity  int      `json:"quantity"`
-	Price     float64  `json:"price"`
+	Product  Product `json:"product"`
+	Quantity int     `json:"quantity"`
+	Price    float64 `json:"price"`
 }
 
 // Representa um pedido mantido pelo microsserviço Principal
@@ -73,6 +73,6 @@ type OrderShippedPayload struct {
 }
 
 type InventoryData struct {
-	Products []Product        `json:"products"`
-	Stock    map[string]int   `json:"stock"`
+	Products []Product      `json:"products"`
+	Stock    map[string]int `json:"stock"`
 }

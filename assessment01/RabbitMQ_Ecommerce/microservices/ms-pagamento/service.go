@@ -1,11 +1,13 @@
 package mspagamento
 
 import (
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
 
+	"RabbitMQ_Ecommerce/utils/cryptography"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/misc"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
@@ -17,6 +19,8 @@ type Runtime struct {
 	Connection *amqp.Connection
 	Channel    *amqp.Channel
 	QueueName  string
+	PrivateKey *rsa.PrivateKey
+	PublicKeys cryptography.PublicKeyRegistry
 }
 
 func InitMSPagamento() (
@@ -35,6 +39,32 @@ func InitMSPagamento() (
 		return nil, err
 	}
 	log.Println("[SUCESSO] Canal RabbitMQ aberto")
+
+	privateKey, err := cryptography.LoadPrivateKey("keys/ms-pagamento/private.pem")
+	if err != nil {
+		channel.Close()
+		connection.Close()
+
+		return nil, fmt.Errorf(
+			"erro ao carregar chave privada do Pagamento: %w",
+			err,
+		)
+	}
+
+	publicKeys, err := cryptography.LoadPublicKeyRegistry(
+		map[string]string{
+			events.ProducerEstoque: "keys/ms-pagamento/public_keys/ms-estoque.pem",
+		},
+	)
+	if err != nil {
+		channel.Close()
+		connection.Close()
+
+		return nil, fmt.Errorf(
+			"erro ao carregar chaves públicas do Pagamento: %w",
+			err,
+		)
+	}
 
 	if err := rabbitmq.DeclareExchanges(channel); err != nil {
 		channel.Close()
@@ -74,6 +104,8 @@ func InitMSPagamento() (
 		Connection: connection,
 		Channel:    channel,
 		QueueName:  paymentQueue.Name,
+		PrivateKey: privateKey,
+		PublicKeys: publicKeys,
 	}
 
 	return runTime, nil
@@ -90,6 +122,7 @@ func DecideApproval() bool {
 func HandlePaymentEvent(
 	envelope events.EventEnvelope,
 	channel *amqp.Channel,
+	privateKey *rsa.PrivateKey,
 ) error {
 	var payload events.OrderReferencePayload
 
@@ -105,6 +138,7 @@ func HandlePaymentEvent(
 		if DecideApproval() {
 			err := PublishPaymentOk(
 				channel,
+				privateKey,
 				payload.OrderID,
 			)
 
@@ -122,6 +156,7 @@ func HandlePaymentEvent(
 		} else {
 			if err := PublishPaymentNok(
 				channel,
+				privateKey,
 				payload.OrderID,
 				"pagamento recusado pela operadora",
 			); err != nil {
@@ -149,17 +184,18 @@ func HandlePaymentEvent(
 
 func PublishPaymentOk(
 	channel *amqp.Channel,
+	privateKey *rsa.PrivateKey,
 	orderId string,
 ) error {
 	payload := events.PaymentResultPayload{
 		OrderID: orderId,
 	}
 
-	envelope, err := misc.MountEnvelope(
+	envelope, err := misc.MountSignedEnvelope(
 		payload,
 		events.PagamentoAprovado,
-		"ms-pagamento",
-		"signature",
+		events.ProducerPagamento,
+		privateKey,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)
@@ -179,6 +215,7 @@ func PublishPaymentOk(
 
 func PublishPaymentNok(
 	channel *amqp.Channel,
+	privateKey *rsa.PrivateKey,
 	orderId string,
 	reason string,
 ) error {
@@ -187,11 +224,11 @@ func PublishPaymentNok(
 		Reason:  reason,
 	}
 
-	envelope, err := misc.MountEnvelope(
+	envelope, err := misc.MountSignedEnvelope(
 		payload,
 		events.PagamentoRecusado,
-		"ms-pagamento",
-		"signature",
+		events.ProducerPagamento,
+		privateKey,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)

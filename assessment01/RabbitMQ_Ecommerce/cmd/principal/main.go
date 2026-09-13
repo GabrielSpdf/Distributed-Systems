@@ -34,14 +34,16 @@ func run() error {
 	consumerErrors := make(chan error, 1)
 
 	go func() {
-		err := rabbitmq.ConsumeEvents(
+		err := rabbitmq.ConsumeSignedEvents(
 			msPrincipal.Channel,
 			msPrincipal.QueueName,
+			msPrincipal.PublicKeys,
 			func(envelope events.EventEnvelope) error {
 				return msprincipal.HandlePrincipalEvent(
 					envelope,
 					"data/orders.json",
 					msPrincipal.Channel,
+					msPrincipal.PrivateKey,
 				)
 			},
 		)
@@ -186,7 +188,7 @@ func run() error {
 				)
 			}
 
-			err = msprincipal.PublishCreateOrder(msPrincipal.Channel, orderPayload)
+			err = msprincipal.PublishCreateOrder(msPrincipal.Channel, msPrincipal.PrivateKey, orderPayload)
 			if err != nil {
 				err = msprincipal.UpdateOrderStatus("data/orders.json", orderPayload.OrderID, events.StatusCancelled)
 				if err != nil {
@@ -216,7 +218,7 @@ func run() error {
 				return err
 			}
 
-			order, err := msprincipal.FindOrder("data/orders.json", orderID); 
+			order, err := msprincipal.FindOrder("data/orders.json", orderID)
 			if err != nil {
 				fmt.Printf("[ERRO] %s\n", err)
 				continue
@@ -227,7 +229,7 @@ func run() error {
 				continue
 			}
 
-			err = msprincipal.PublishDeleteOrder(msPrincipal.Channel, orderID)
+			err = msprincipal.PublishDeleteOrder(msPrincipal.Channel, msPrincipal.PrivateKey, orderID)
 			if err != nil {
 				return err
 			}

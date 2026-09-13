@@ -1,9 +1,9 @@
 package msconsumidores
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
-	"encoding/json"
 
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
@@ -137,4 +137,4 @@ func HandleConsumerEvent(
 	}
 
 	return nil
-} 
+}

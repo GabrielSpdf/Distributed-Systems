@@ -1,14 +1,16 @@
 package msestoque
 
 import (
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"log"
 
+	"RabbitMQ_Ecommerce/utils/cryptography"
 	"RabbitMQ_Ecommerce/utils/events"
+	"RabbitMQ_Ecommerce/utils/inventory"
 	"RabbitMQ_Ecommerce/utils/misc"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
-	"RabbitMQ_Ecommerce/utils/inventory"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -17,6 +19,8 @@ type Runtime struct {
 	Connection *amqp.Connection
 	Channel    *amqp.Channel
 	QueueName  string
+	PrivateKey *rsa.PrivateKey
+	PublicKeys cryptography.PublicKeyRegistry
 }
 
 func InitMSEstoque() (
@@ -35,6 +39,32 @@ func InitMSEstoque() (
 		return nil, err
 	}
 	log.Println("[SUCESSO] Canal RabbitMQ aberto")
+
+	privateKey, err := cryptography.LoadPrivateKey("keys/ms-estoque/private.pem")
+	if err != nil {
+		channel.Close()
+		connection.Close()
+
+		return nil, fmt.Errorf(
+			"erro ao carregar chave privada do Estoque: %w",
+			err,
+		)
+	}
+
+	publicKeys, err := cryptography.LoadPublicKeyRegistry(
+		map[string]string{
+			events.ProducerPrincipal: "keys/ms-estoque/public_keys/ms-principal.pem",
+		},
+	)
+	if err != nil {
+		channel.Close()
+		connection.Close()
+
+		return nil, fmt.Errorf(
+			"erro ao carregar chaves públicas do Estoque: %w",
+			err,
+		)
+	}
 
 	if err := rabbitmq.DeclareExchanges(channel); err != nil {
 		channel.Close()
@@ -75,6 +105,8 @@ func InitMSEstoque() (
 		Connection: connection,
 		Channel:    channel,
 		QueueName:  stockQueue.Name,
+		PrivateKey: privateKey,
+		PublicKeys: publicKeys,
 	}
 
 	return runTime, nil
@@ -198,6 +230,7 @@ func HandleStockEvent(
 	stock map[string]int,
 	reservations map[string]events.Order,
 	channel *amqp.Channel,
+	privateKey *rsa.PrivateKey,
 	inventoryFileName string,
 ) error {
 	switch envelope.EventType {
@@ -232,6 +265,7 @@ func HandleStockEvent(
 
 			err := PublishStockUnavailable(
 				channel,
+				privateKey,
 				payload.OrderID,
 			)
 			if err != nil {
@@ -268,6 +302,7 @@ func HandleStockEvent(
 
 			if err := PublishStockOk(
 				channel,
+				privateKey,
 				payload.OrderID,
 			); err != nil {
 				// Desfaz a alteração em memória.
@@ -357,7 +392,7 @@ func HandleStockEvent(
 	return nil
 }
 
-func PublishStockOk(channel *amqp.Channel, orderID string) error {
+func PublishStockOk(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID string) error {
 	fmt.Println("==================================================================")
 	fmt.Printf("                  ESTOQUE VERIFICADO - PEDIDO - %s               \n", orderID)
 	fmt.Println("==================================================================")
@@ -366,11 +401,11 @@ func PublishStockOk(channel *amqp.Channel, orderID string) error {
 		OrderID: orderID,
 	}
 
-	envelope, err := misc.MountEnvelope(
+	envelope, err := misc.MountSignedEnvelope(
 		payload,
 		events.PedidoEstoqueOk,
-		"ms-estoque",
-		"signature",
+		events.ProducerEstoque,
+		privateKey,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)
@@ -388,7 +423,7 @@ func PublishStockOk(channel *amqp.Channel, orderID string) error {
 	return nil
 }
 
-func PublishStockUnavailable(channel *amqp.Channel, orderID string) error {
+func PublishStockUnavailable(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID string) error {
 	fmt.Println("==================================================================")
 	fmt.Printf("                  ESTOQUE INDISPONÍVEL - PEDIDO - %s               \n", orderID)
 	fmt.Println("==================================================================")
@@ -397,11 +432,11 @@ func PublishStockUnavailable(channel *amqp.Channel, orderID string) error {
 		OrderID: orderID,
 	}
 
-	envelope, err := misc.MountEnvelope(
+	envelope, err := misc.MountSignedEnvelope(
 		payload,
-		events.EstoqueIndisponivel,
-		"ms-estoque",
-		"signature",
+		events.PedidoEstoqueOk,
+		events.ProducerEstoque,
+		privateKey,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)
