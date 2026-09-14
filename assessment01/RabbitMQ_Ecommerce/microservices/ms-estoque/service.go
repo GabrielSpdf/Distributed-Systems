@@ -112,25 +112,31 @@ func InitMSEstoque() (
 	return runtime, nil
 }
 
+type StockReservationResult struct {
+	Available bool
+	ProductID string
+	Reason    string
+}
+
 func ReserveStock(
 	stock map[string]int,
 	reservations map[string]events.Order,
 	order events.Order,
-) (bool, error) {
+) (StockReservationResult, error) {
 	if order.OrderID == "" {
-		return true, fmt.Errorf("pedido sem identificador")
+		return StockReservationResult{}, fmt.Errorf("pedido sem identificador")
 	}
 
 	if reservations == nil {
-		return true, fmt.Errorf("mapa de reservas não inicializado")
+		return StockReservationResult{}, fmt.Errorf("mapa de reservas não inicializado")
 	}
 
 	if _, exists := reservations[order.OrderID]; exists {
-		return true, fmt.Errorf("pedido já reservado: %s", order.OrderID)
+		return StockReservationResult{}, fmt.Errorf("pedido já reservado: %s", order.OrderID)
 	}
 
 	if len(order.Items) == 0 {
-		return true, fmt.Errorf(
+		return StockReservationResult{}, fmt.Errorf(
 			"nenhum item fornecido para o pedido %s",
 			order.OrderID,
 		)
@@ -142,11 +148,11 @@ func ReserveStock(
 	// Agrupa produtos repetidos sem alterar o estoque.
 	for _, item := range order.Items {
 		if item.Product.ID == "" {
-			return true, fmt.Errorf("produto sem identificador no pedido %s", order.OrderID)
+			return StockReservationResult{}, fmt.Errorf("produto sem identificador no pedido %s", order.OrderID)
 		}
 
 		if item.Quantity <= 0 {
-			return true, fmt.Errorf(
+			return StockReservationResult{}, fmt.Errorf(
 				"quantidade inválida para o produto %s: %d",
 				item.Product.ID,
 				item.Quantity,
@@ -168,13 +174,25 @@ func ReserveStock(
 	for _, productID := range itemOrder {
 		item := groupedItems[productID]
 
-		available, exists := stock[productID]
+		availableQuantity, exists := stock[productID]
 		if !exists {
-			return false, nil
+			return StockReservationResult{
+				Available: false,
+				ProductID: productID,
+				Reason:    "produto não encontrado no estoque",
+			}, nil
 		}
 
-		if item.Quantity > available {
-			return false, nil
+		if item.Quantity > availableQuantity {
+			return StockReservationResult{
+				Available: false,
+				ProductID: productID,
+				Reason: fmt.Sprintf(
+					"estoque insuficiente: solicitado %d, disponível %d",
+					item.Quantity,
+					availableQuantity,
+				),
+			}, nil
 		}
 	}
 
@@ -191,7 +209,9 @@ func ReserveStock(
 
 	reservations[order.OrderID] = reservedOrder
 
-	return true, nil
+	return StockReservationResult{
+		Available: true,
+	}, nil
 }
 
 func ReleaseStock(
@@ -244,7 +264,7 @@ func HandleStockEvent(
 			)
 		}
 
-		isAvailable, err := ReserveStock(
+		reservationResult, err := ReserveStock(
 			stock,
 			reservations,
 			payload,
@@ -257,20 +277,23 @@ func HandleStockEvent(
 			)
 		}
 
-		if !isAvailable {
+		if !reservationResult.Available {
 			log.Printf(
-				"[ERRO] Estoque insuficiente para o pedido %s",
+				"[AVISO] Estoque indisponível para o pedido %s: produto=%s motivo=%s",
 				payload.OrderID,
+				reservationResult.ProductID,
+				reservationResult.Reason,
 			)
 
 			err := PublishStockUnavailable(
 				channel,
 				privateKey,
 				payload.OrderID,
+				reservationResult,
 			)
 			if err != nil {
 				return fmt.Errorf(
-					"erro ao publicar pedido.estoque_indisponivel: %w",
+					"erro ao publicar estoque.indisponivel: %w",
 					err,
 				)
 			}
@@ -423,13 +446,15 @@ func PublishStockOk(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID s
 	return nil
 }
 
-func PublishStockUnavailable(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID string) error {
+func PublishStockUnavailable(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID string, reservationResult StockReservationResult) error {
 	fmt.Println("==================================================================")
 	fmt.Printf("                  ESTOQUE INDISPONÍVEL - PEDIDO - %s               \n", orderID)
 	fmt.Println("==================================================================")
 
-	payload := events.OrderReferencePayload{
-		OrderID: orderID,
+	payload := events.StockUnavailablePayload{
+		OrderID:   orderID,
+		ProductID: reservationResult.ProductID,
+		Reason:    reservationResult.Reason,
 	}
 
 	envelope, err := misc.MountSignedEnvelope(

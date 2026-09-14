@@ -53,7 +53,7 @@ type OrderReferencePayload struct {
 	OrderID string `json:"order_id"`
 }
 
-// Rrepresenta o conteúdo do evento estoque.indisponivel
+// StockUnavailablePayload representa o conteúdo do evento estoque.indisponivel
 type StockUnavailablePayload struct {
 	OrderID   string `json:"order_id"`
 	ProductID string `json:"product_id"`
