@@ -101,7 +101,7 @@ func InitMSEstoque() (
 		log.Println("[SUCESSO] Fila estoque ligada à exchange Ecommerce e vinculada ao roteamento", routingKey)
 	}
 
-	runTime := &Runtime{
+	runtime := &Runtime{
 		Connection: connection,
 		Channel:    channel,
 		QueueName:  stockQueue.Name,
@@ -109,7 +109,7 @@ func InitMSEstoque() (
 		PublicKeys: publicKeys,
 	}
 
-	return runTime, nil
+	return runtime, nil
 }
 
 func ReserveStock(

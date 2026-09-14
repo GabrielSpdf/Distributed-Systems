@@ -40,12 +40,12 @@ func InitMSPromocoes() (
 	}
 	log.Println("[SUCESSO] Exchanges declaradas")
 
-	runTime := &Runtime{
+	runtime := &Runtime{
 		Connection: connection,
 		Channel:    channel,
 	}
 
-	return runTime, nil
+	return runtime, nil
 }
 
 func GeneratePromotion(products []events.Product) events.PromotionPayload {

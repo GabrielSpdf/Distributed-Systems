@@ -100,7 +100,7 @@ func InitMSPagamento() (
 		log.Println("[SUCESSO] Fila pagamento ligada à exchange Ecommerce e vinculada ao roteamento", routingKey)
 	}
 
-	runTime := &Runtime{
+	runtime := &Runtime{
 		Connection: connection,
 		Channel:    channel,
 		QueueName:  paymentQueue.Name,
@@ -108,7 +108,7 @@ func InitMSPagamento() (
 		PublicKeys: publicKeys,
 	}
 
-	return runTime, nil
+	return runtime, nil
 }
 
 func DecideApproval() bool {
@@ -185,10 +185,10 @@ func HandlePaymentEvent(
 func PublishPaymentOk(
 	channel *amqp.Channel,
 	privateKey *rsa.PrivateKey,
-	orderId string,
+	orderID string,
 ) error {
 	payload := events.PaymentResultPayload{
-		OrderID: orderId,
+		OrderID: orderID,
 	}
 
 	envelope, err := misc.MountSignedEnvelope(
@@ -216,11 +216,11 @@ func PublishPaymentOk(
 func PublishPaymentNok(
 	channel *amqp.Channel,
 	privateKey *rsa.PrivateKey,
-	orderId string,
+	orderID string,
 	reason string,
 ) error {
 	payload := events.PaymentResultPayload{
-		OrderID: orderId,
+		OrderID: orderID,
 		Reason:  reason,
 	}
 

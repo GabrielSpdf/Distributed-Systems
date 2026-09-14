@@ -110,7 +110,7 @@ func InitMSPrincipal() (
 		log.Println("[SUCESSO] Fila principal ligada à exchange Ecommerce e vinculada ao roteamento", routingKey)
 	}
 
-	runTime := &Runtime{
+	runtime := &Runtime{
 		Connection: connection,
 		Channel:    channel,
 		QueueName:  principalQueue.Name,
@@ -118,7 +118,7 @@ func InitMSPrincipal() (
 		PublicKeys: publicKeys,
 	}
 
-	return runTime, nil
+	return runtime, nil
 }
 
 func CreateOrder(orderID int, orderItems []events.OrderItem) (events.OrderCreatedPayload, error) {

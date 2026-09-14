@@ -41,23 +41,23 @@ func InitMSConsumer(allCategories bool) (
 	}
 	log.Println("[SUCESSO] Exchanges declaradas")
 
-	var msg string
+	var message string
 	var queueName string
-	var eventsType []string
+	var routingKeys []string
 
 	if allCategories {
 		queueName = events.QueueConsumidor2
-		eventsType = []string{
+		routingKeys = []string{
 			events.AllPromotions,
 		}
-		msg = "[SUCESSO] Fila Consumidor 2 declarada para consumir eventos de todas as categorias"
+		message = "[SUCESSO] Fila Consumidor 2 declarada para consumir eventos de todas as categorias"
 	} else {
 		queueName = events.QueueConsumidor1
-		eventsType = []string{
+		routingKeys = []string{
 			events.PromocaoCategoriaA,
 			events.PromocaoCategoriaB,
 		}
-		msg = "[SUCESSO] Fila Consumidor 1 declarada para consumir eventos da categorias Alimentos e Limpeza"
+		message = "[SUCESSO] Fila Consumidor 1 declarada para consumir eventos das categorias Alimentos e Limpeza"
 	}
 
 	consumerQueue, err := rabbitmq.DeclareQueue(
@@ -69,9 +69,9 @@ func InitMSConsumer(allCategories bool) (
 		connection.Close()
 		return nil, err
 	}
-	log.Println(msg)
+	log.Println(message)
 
-	for _, routingKey := range eventsType {
+	for _, routingKey := range routingKeys {
 		if err := rabbitmq.BindQueue(
 			channel,
 			consumerQueue.Name,
@@ -82,16 +82,16 @@ func InitMSConsumer(allCategories bool) (
 			connection.Close()
 			return nil, err
 		}
-		log.Println("[SUCESSO] Fila estoque ligada à exchange Promocoes e vinculada ao roteamento", routingKey)
+		log.Println("[SUCESSO] Fila consumidor ligada à exchange Promocoes e vinculada ao roteamento", routingKey)
 	}
 
-	runTime := &Runtime{
+	runtime := &Runtime{
 		Connection: connection,
 		Channel:    channel,
 		QueueName:  consumerQueue.Name,
 	}
 
-	return runTime, nil
+	return runtime, nil
 }
 
 func HandleConsumerEvent(

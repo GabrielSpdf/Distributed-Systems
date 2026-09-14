@@ -98,7 +98,7 @@ func InitMSEntrega() (
 		log.Println("[SUCESSO] Fila entrega ligada à exchange Ecommerce e vinculada ao roteamento", routingKey)
 	}
 
-	runTime := &Runtime{
+	runtime := &Runtime{
 		Connection: connection,
 		Channel:    channel,
 		QueueName:  deliveryQueue.Name,
@@ -106,7 +106,7 @@ func InitMSEntrega() (
 		PublicKeys: publicKeys,
 	}
 
-	return runTime, nil
+	return runtime, nil
 }
 
 func HandleDeliveryEvent(
@@ -161,12 +161,12 @@ func HandleDeliveryEvent(
 func PublishOrderShipped(
 	channel *amqp.Channel,
 	privateKey *rsa.PrivateKey,
-	orderId string,
+	orderID string,
 	invoiceID string,
 	trackingCode string,
 ) error {
 	payload := events.OrderShippedPayload{
-		OrderID:      orderId,
+		OrderID:      orderID,
 		InvoiceID:    invoiceID,
 		TrackingCode: trackingCode,
 	}
