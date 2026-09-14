@@ -37,6 +37,7 @@ const (
 	StatusShipped          OrderStatus = "ENVIADO"
 	StatusPending          OrderStatus = "PENDENTE"
 	StatusDeleted          OrderStatus = "EXCLUÍDO"
+	StatusProcessingFailed OrderStatus = "FALHA_NO_PROCESSAMENTO"
 )
 
 // Representa o conteúdo do evento pedido.criado

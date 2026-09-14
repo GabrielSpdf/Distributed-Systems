@@ -39,7 +39,7 @@ func run(consumerType string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	fmt.Printf("[SUCESSO] Microsserviço consumidor %s inicializado com sucesso \n", consumerType)
 
 	defer msConsumer.Connection.Close()

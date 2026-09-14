@@ -11,8 +11,10 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		log.Println("[ERRO] Erro ao executar o sistema:", err)
-		log.Fatal(err)
+		log.Fatalf(
+			"[ERRO] Erro ao executar o sistema: %v",
+			err,
+		)
 	}
 }
 

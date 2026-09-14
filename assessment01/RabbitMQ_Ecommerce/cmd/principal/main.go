@@ -193,7 +193,7 @@ func run() error {
 
 			err = msprincipal.PublishCreateOrder(msPrincipal.Channel, msPrincipal.PrivateKey, orderPayload)
 			if err != nil {
-				updateStatusErr := msprincipal.UpdateOrderStatus("data/orders.json", orderPayload.OrderID, events.StatusCancelled)
+				updateStatusErr := msprincipal.UpdateOrderStatus("data/orders.json", orderPayload.OrderID, events.StatusProcessingFailed)
 				if updateStatusErr != nil {
 					return fmt.Errorf(
 						"erro ao publicar pedido %s: %w e erro ao atualizar status do pedido: %v",
@@ -202,7 +202,12 @@ func run() error {
 						updateStatusErr,
 					)
 				}
-				return err
+				return fmt.Errorf(
+					"pedido %s registrado como %s após falha na publicação: %w",
+					orderPayload.OrderID,
+					events.StatusProcessingFailed,
+					err,
+				)
 			}
 
 		case 3:
