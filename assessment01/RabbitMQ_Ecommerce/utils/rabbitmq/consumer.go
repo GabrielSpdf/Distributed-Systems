@@ -59,6 +59,24 @@ func consumeEvents(
 			continue
 		}
 
+		if delivery.RoutingKey != envelope.EventType {
+			fmt.Printf(
+				"[SEGURANÇA] Evento %s descartado: routing key %s diferente do tipo %s\n",
+				envelope.EventID,
+				delivery.RoutingKey,
+				envelope.EventType,
+			)
+
+			if nackErr := delivery.Nack(false, false); nackErr != nil {
+				return fmt.Errorf(
+					"erro ao rejeitar evento com routing key incompatível: %w",
+					nackErr,
+				)
+			}
+
+			continue
+		}
+
 		if validator != nil {
 			if err := validator(envelope); err != nil {
 				fmt.Printf(
