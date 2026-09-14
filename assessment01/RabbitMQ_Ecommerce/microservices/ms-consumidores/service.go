@@ -96,7 +96,6 @@ func InitMSConsumer(allCategories bool) (
 
 func HandleConsumerEvent(
 	envelope events.EventEnvelope,
-	channel *amqp.Channel,
 ) error {
 	switch envelope.EventType {
 	case events.PromocaoCategoriaA, events.PromocaoCategoriaB, events.PromocaoCategoriaC:

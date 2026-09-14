@@ -53,7 +53,7 @@ func run(consumerType string) error {
 		msConsumer.Channel,
 		msConsumer.QueueName,
 		func(envelope events.EventEnvelope) error {
-			return msconsumidores.HandleConsumerEvent(envelope, msConsumer.Channel)
+			return msconsumidores.HandleConsumerEvent(envelope)
 		},
 	)
 }
