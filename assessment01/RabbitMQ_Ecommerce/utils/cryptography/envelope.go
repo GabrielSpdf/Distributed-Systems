@@ -110,6 +110,25 @@ func VerifyEnvelopeFromProducer(
 	envelope events.EventEnvelope,
 	publicKeys PublicKeyRegistry,
 ) error {
+	expectedProducer, exists := events.ExpectedProducerFor(
+		envelope.EventType,
+	)
+	if !exists {
+		return fmt.Errorf(
+			"tipo de evento não autorizado: %s",
+			envelope.EventType,
+		)
+	}
+
+	if envelope.Producer != expectedProducer {
+		return fmt.Errorf(
+			"produtor %s não está autorizado a publicar o evento %s; produtor esperado: %s",
+			envelope.Producer,
+			envelope.EventType,
+			expectedProducer,
+		)
+	}
+
 	publicKey, exists := publicKeys[envelope.Producer]
 	if !exists {
 		return fmt.Errorf(
