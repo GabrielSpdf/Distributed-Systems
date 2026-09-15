@@ -445,7 +445,19 @@ func UpdateOrderStatus(
 		if ordersData.Orders[index].OrderID == orderID {
 			currentStatus := ordersData.Orders[index].Status
 
-			if currentStatus == events.StatusCancelled || currentStatus == events.StatusShipped {
+			if !events.CanTransitionOrderStatus(
+				currentStatus,
+				status,
+			) {
+				return fmt.Errorf(
+					"transição de status inválida para o pedido %s: %s -> %s",
+					orderID,
+					currentStatus,
+					status,
+				)
+			}
+
+			if currentStatus == status {
 				return nil
 			}
 
