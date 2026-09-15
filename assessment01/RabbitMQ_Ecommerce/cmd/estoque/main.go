@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"RabbitMQ_Ecommerce/microservices/ms-estoque"
-	"RabbitMQ_Ecommerce/microservices/ms-principal"
+	msestoque "RabbitMQ_Ecommerce/microservices/ms-estoque"
+	msprincipal "RabbitMQ_Ecommerce/microservices/ms-principal"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/inventory"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
@@ -21,15 +21,15 @@ func main() {
 }
 
 func run() error {
-	msEstoque, err := msestoque.InitMSEstoque()
+	stockService, err := msestoque.InitializeStockService()
 	if err != nil {
 		return err
 	}
 
 	fmt.Println("[SUCESSO] Microsserviço estoque inicializado com sucesso")
 
-	defer msEstoque.Connection.Close()
-	defer msEstoque.Channel.Close()
+	defer stockService.Connection.Close()
+	defer stockService.Channel.Close()
 
 	fmt.Println("==================================================================")
 	fmt.Println("                      MICROSSERVIÇO ESTOQUE                       ")
@@ -58,11 +58,11 @@ func run() error {
 	}
 
 	return rabbitmq.ConsumeSignedEvents(
-		msEstoque.Channel,
-		msEstoque.QueueName,
-		msEstoque.PublicKeys,
+		stockService.Channel,
+		stockService.QueueName,
+		stockService.PublicKeys,
 		func(envelope events.EventEnvelope) error {
-			return msestoque.HandleStockEvent(envelope, stock, reservations, msEstoque.Channel, msEstoque.PrivateKey, "inventory.json")
+			return msestoque.HandleStockEvent(envelope, stock, reservations, stockService.Channel, stockService.PrivateKey, "inventory.json")
 		},
 	)
 }

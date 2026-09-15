@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ func TestVerifyEnvelopeRejectsAlteredPayload(
 
 	envelope := events.EventEnvelope{
 		EventID:   "EVENT-TEST-001",
-		EventType: events.PedidoCriado,
+		EventType: events.OrderCreated,
 		Producer:  events.ProducerPrincipal,
 		Timestamp: time.Now().UTC(),
 		Payload:   payloadJSON,
@@ -105,7 +106,7 @@ func TestEnvelopeRemainsValidAfterJSONTransport(
 
 	envelope := events.EventEnvelope{
 		EventID:   "EVENT-TEST-002",
-		EventType: events.PedidoCriado,
+		EventType: events.OrderCreated,
 		Producer:  events.ProducerPrincipal,
 		Timestamp: time.Now().UTC(),
 		Payload:   payloadJSON,
@@ -173,6 +174,92 @@ func TestEnvelopeRemainsValidAfterJSONTransport(
 	); err == nil {
 		t.Fatal(
 			"envelope adulterado foi aceito indevidamente",
+		)
+	}
+}
+
+func TestVerifyEnvelopeFromProducerRejectsUnauthorizedEventType(
+	t *testing.T,
+) {
+	// Gera um par de chaves temporário para representar o Estoque.
+	stockPrivateKey, err := rsa.GenerateKey(
+		rand.Reader,
+		cryptography.RSAKeySize,
+	)
+	if err != nil {
+		t.Fatalf(
+			"erro ao gerar chave privada do Estoque: %v",
+			err,
+		)
+	}
+
+	// O payload corresponde a um resultado de pagamento.
+	payloadJSON, err := json.Marshal(
+		events.PaymentResultPayload{
+			OrderID: "PED-001",
+		},
+	)
+	if err != nil {
+		t.Fatalf(
+			"erro ao serializar payload: %v",
+			err,
+		)
+	}
+
+	// Simula o Estoque tentando publicar pagamento.aprovado.
+	envelope := events.EventEnvelope{
+		EventID:   "EVENT-TEST-UNAUTHORIZED-PRODUCER",
+		EventType: events.PaymentApproved,
+		Producer:  events.ProducerStock,
+		Timestamp: time.Now().UTC(),
+		Payload:   payloadJSON,
+	}
+
+	// A assinatura é realmente produzida pela chave privada do Estoque.
+	if err := cryptography.SignEnvelope(
+		&envelope,
+		stockPrivateKey,
+	); err != nil {
+		t.Fatalf(
+			"erro ao assinar envelope: %v",
+			err,
+		)
+	}
+
+	// Confirma que a assinatura é matematicamente válida.
+	if err := cryptography.VerifyEnvelope(
+		envelope,
+		&stockPrivateKey.PublicKey,
+	); err != nil {
+		t.Fatalf(
+			"a assinatura do Estoque deveria ser matematicamente válida: %v",
+			err,
+		)
+	}
+
+	publicKeys := cryptography.PublicKeyRegistry{
+		events.ProducerStock: &stockPrivateKey.PublicKey,
+	}
+
+	// Mesmo com uma assinatura válida, o Estoque não pode publicar
+	// um evento que pertence ao Pagamento.
+	err = cryptography.VerifyEnvelopeFromProducer(
+		envelope,
+		publicKeys,
+	)
+	if err == nil {
+		t.Fatal(
+			"evento pagamento.aprovado publicado pelo Estoque foi aceito indevidamente",
+		)
+	}
+
+	if !strings.Contains(
+		err.Error(),
+		"não está autorizado",
+	) {
+		t.Fatalf(
+			"erro inesperado ao validar autorização do produtor: %v",
+			err,
 		)
 	}
 }

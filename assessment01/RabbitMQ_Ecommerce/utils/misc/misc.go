@@ -12,8 +12,8 @@ import (
 	"RabbitMQ_Ecommerce/utils/events"
 )
 
-// MountEnvelope monta um envelope sem assinatura.
-func MountEnvelope(
+// BuildEnvelope monta um envelope sem assinatura.
+func BuildEnvelope(
 	payload any,
 	eventType string,
 	producer string,
@@ -45,14 +45,14 @@ func MountEnvelope(
 	}, nil
 }
 
-// MountSignedEnvelope monta e assina um envelope.
-func MountSignedEnvelope(
+// BuildSignedEnvelope monta e assina um envelope.
+func BuildSignedEnvelope(
 	payload any,
 	eventType string,
 	producer string,
 	privateKey *rsa.PrivateKey,
 ) (events.EventEnvelope, error) {
-	envelope, err := MountEnvelope(
+	envelope, err := BuildEnvelope(
 		payload,
 		eventType,
 		producer,

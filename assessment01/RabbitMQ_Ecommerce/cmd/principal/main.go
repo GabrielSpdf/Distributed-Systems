@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"RabbitMQ_Ecommerce/microservices/ms-principal"
+	msprincipal "RabbitMQ_Ecommerce/microservices/ms-principal"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/inventory"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
@@ -19,7 +19,7 @@ func main() {
 }
 
 func run() error {
-	msPrincipal, err := msprincipal.InitMSPrincipal()
+	principalService, err := msprincipal.InitializePrincipalService()
 	if err != nil {
 		return err
 	}
@@ -28,9 +28,9 @@ func run() error {
 	time.Sleep(3 * time.Second)
 	fmt.Print("\033[H\033[2J")
 
-	defer msPrincipal.Connection.Close()
-	defer msPrincipal.PublisherChannel.Close()
-	defer msPrincipal.ConsumerChannel.Close()
+	defer principalService.Connection.Close()
+	defer principalService.PublisherChannel.Close()
+	defer principalService.ConsumerChannel.Close()
 
 	consumerErrors := make(chan error, 1)
 
@@ -40,15 +40,15 @@ func run() error {
 
 	go func() {
 		err := rabbitmq.ConsumeSignedEvents(
-			msPrincipal.ConsumerChannel,
-			msPrincipal.QueueName,
-			msPrincipal.PublicKeys,
+			principalService.ConsumerChannel,
+			principalService.QueueName,
+			principalService.PublicKeys,
 			func(envelope events.EventEnvelope) error {
 				return msprincipal.HandlePrincipalEvent(
 					envelope,
 					ordersRepository,
-					msPrincipal.ConsumerChannel,
-					msPrincipal.PrivateKey,
+					principalService.ConsumerChannel,
+					principalService.PrivateKey,
 				)
 			},
 		)
@@ -200,7 +200,7 @@ func run() error {
 				)
 			}
 
-			err = msprincipal.PublishCreateOrder(msPrincipal.PublisherChannel, msPrincipal.PrivateKey, orderPayload)
+			err = msprincipal.PublishOrderCreated(principalService.PublisherChannel, principalService.PrivateKey, orderPayload)
 			if err != nil {
 				updateStatusErr := ordersRepository.UpdateStatus(orderPayload.OrderID, events.StatusProcessingFailed)
 				if updateStatusErr != nil {
@@ -231,7 +231,7 @@ func run() error {
 				return err
 			}
 
-			orderID, err := msprincipal.SelectOrderToDelete()
+			orderID, err := msprincipal.SelectOrderToHide()
 			if err != nil {
 				return err
 			}

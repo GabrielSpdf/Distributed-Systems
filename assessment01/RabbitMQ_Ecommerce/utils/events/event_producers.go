@@ -1,13 +1,13 @@
 package events
 
 var expectedProducerByEventType = map[string]string{
-	PedidoCriado:        ProducerPrincipal,
-	PedidoExcluido:      ProducerPrincipal,
-	PedidoEstoqueOk:     ProducerEstoque,
-	EstoqueIndisponivel: ProducerEstoque,
-	PagamentoAprovado:   ProducerPagamento,
-	PagamentoRecusado:   ProducerPagamento,
-	PedidoEnviado:       ProducerEntrega,
+	OrderCreated:        ProducerPrincipal,
+	OrderDeleted:        ProducerPrincipal,
+	OrderStockConfirmed: ProducerStock,
+	StockUnavailable:    ProducerStock,
+	PaymentApproved:     ProducerPayment,
+	PaymentRefused:      ProducerPayment,
+	OrderShipped:        ProducerDelivery,
 }
 
 // ExpectedProducerFor returns the producer authorized to publish an event type.

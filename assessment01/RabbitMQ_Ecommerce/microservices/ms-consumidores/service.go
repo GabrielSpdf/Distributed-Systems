@@ -17,7 +17,7 @@ type Runtime struct {
 	QueueName  string
 }
 
-func InitMSConsumer(allCategories bool) (
+func InitializePromotionConsumer(allCategories bool) (
 	*Runtime,
 	error,
 ) {
@@ -46,16 +46,16 @@ func InitMSConsumer(allCategories bool) (
 	var routingKeys []string
 
 	if allCategories {
-		queueName = events.QueueConsumidor2
+		queueName = events.QueueConsumer2
 		routingKeys = []string{
 			events.AllPromotions,
 		}
 		message = "[SUCESSO] Fila Consumidor 2 declarada para consumir eventos de todas as categorias"
 	} else {
-		queueName = events.QueueConsumidor1
+		queueName = events.QueueConsumer1
 		routingKeys = []string{
-			events.PromocaoCategoriaA,
-			events.PromocaoCategoriaB,
+			events.PromotionCategoryA,
+			events.PromotionCategoryB,
 		}
 		message = "[SUCESSO] Fila Consumidor 1 declarada para consumir eventos das categorias Alimentos e Limpeza"
 	}
@@ -76,7 +76,7 @@ func InitMSConsumer(allCategories bool) (
 			channel,
 			consumerQueue.Name,
 			routingKey,
-			events.ExchangePromocoes,
+			events.ExchangePromotions,
 		); err != nil {
 			channel.Close()
 			connection.Close()
@@ -98,7 +98,7 @@ func HandleConsumerEvent(
 	envelope events.EventEnvelope,
 ) error {
 	switch envelope.EventType {
-	case events.PromocaoCategoriaA, events.PromocaoCategoriaB, events.PromocaoCategoriaC:
+	case events.PromotionCategoryA, events.PromotionCategoryB, events.PromotionCategoryC:
 		var payload events.PromotionPayload
 
 		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {

@@ -15,9 +15,9 @@ const keysDirectory = "keys"
 
 var services = []string{
 	events.ProducerPrincipal,
-	events.ProducerEstoque,
-	events.ProducerPagamento,
-	events.ProducerEntrega,
+	events.ProducerStock,
+	events.ProducerPayment,
+	events.ProducerDelivery,
 }
 
 func main() {

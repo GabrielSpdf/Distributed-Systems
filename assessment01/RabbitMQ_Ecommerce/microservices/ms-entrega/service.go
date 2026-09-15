@@ -22,7 +22,7 @@ type Runtime struct {
 	PublicKeys cryptography.PublicKeyRegistry
 }
 
-func InitMSEntrega() (
+func InitializeDeliveryService() (
 	*Runtime,
 	error,
 ) {
@@ -51,7 +51,7 @@ func InitMSEntrega() (
 
 	publicKeys, err := cryptography.LoadPublicKeyRegistry(
 		map[string]string{
-			events.ProducerPagamento: "keys/ms-entrega/public_keys/ms-pagamento.pem",
+			events.ProducerPayment: "keys/ms-entrega/public_keys/ms-pagamento.pem",
 		},
 	)
 	if err != nil {
@@ -73,7 +73,7 @@ func InitMSEntrega() (
 
 	deliveryQueue, err := rabbitmq.DeclareQueue(
 		channel,
-		events.QueueEntrega,
+		events.QueueDelivery,
 	)
 	if err != nil {
 		channel.Close()
@@ -83,7 +83,7 @@ func InitMSEntrega() (
 	log.Println("[SUCESSO] Fila entrega declarada")
 
 	for _, routingKey := range []string{
-		events.PagamentoAprovado,
+		events.PaymentApproved,
 	} {
 		if err := rabbitmq.BindQueue(
 			channel,
@@ -124,7 +124,7 @@ func HandleDeliveryEvent(
 	}
 
 	switch envelope.EventType {
-	case events.PagamentoAprovado:
+	case events.PaymentApproved:
 		invoiceID := fmt.Sprintf("INV-%s", payload.OrderID)
 		trackingCode := fmt.Sprintf("BR%sBR", payload.OrderID)
 
@@ -171,10 +171,10 @@ func PublishOrderShipped(
 		TrackingCode: trackingCode,
 	}
 
-	envelope, err := misc.MountSignedEnvelope(
+	envelope, err := misc.BuildSignedEnvelope(
 		payload,
-		events.PedidoEnviado,
-		events.ProducerEntrega,
+		events.OrderShipped,
+		events.ProducerDelivery,
 		privateKey,
 	)
 	if err != nil {
@@ -184,7 +184,7 @@ func PublishOrderShipped(
 	if err := rabbitmq.PublishEvent(
 		channel,
 		events.ExchangeEcommerce,
-		events.PedidoEnviado,
+		events.OrderShipped,
 		envelope,
 	); err != nil {
 		return fmt.Errorf("erro ao enviar evento: %w", err)

@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"RabbitMQ_Ecommerce/microservices/ms-promocoes"
+	mspromocoes "RabbitMQ_Ecommerce/microservices/ms-promocoes"
 	"RabbitMQ_Ecommerce/utils/inventory"
 )
 
@@ -19,14 +19,14 @@ func main() {
 }
 
 func run() error {
-	msPromocoes, err := mspromocoes.InitMSPromocoes()
+	promotionService, err := mspromocoes.InitializePromotionService()
 	if err != nil {
 		return err
 	}
 	fmt.Println("[SUCESSO] Microsserviço promocoes inicializado com sucesso")
 
-	defer msPromocoes.Connection.Close()
-	defer msPromocoes.Channel.Close()
+	defer promotionService.Connection.Close()
+	defer promotionService.Channel.Close()
 
 	fmt.Println("==================================================================")
 	fmt.Println("                      MICROSSERVIÇO PROMOCOES                     ")
@@ -50,7 +50,7 @@ func run() error {
 			continue
 		}
 
-		if err := mspromocoes.PublishPromotion(msPromocoes.Channel, promotion, routingKey); err != nil {
+		if err := mspromocoes.PublishPromotion(promotionService.Channel, promotion, routingKey); err != nil {
 			return fmt.Errorf("erro ao publicar promoção: %w", err)
 		}
 

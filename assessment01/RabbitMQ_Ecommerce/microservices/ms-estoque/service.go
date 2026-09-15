@@ -23,7 +23,7 @@ type Runtime struct {
 	PublicKeys cryptography.PublicKeyRegistry
 }
 
-func InitMSEstoque() (
+func InitializeStockService() (
 	*Runtime,
 	error,
 ) {
@@ -75,7 +75,7 @@ func InitMSEstoque() (
 
 	stockQueue, err := rabbitmq.DeclareQueue(
 		channel,
-		events.QueueEstoque,
+		events.QueueStock,
 	)
 	if err != nil {
 		channel.Close()
@@ -85,8 +85,8 @@ func InitMSEstoque() (
 	log.Println("[SUCESSO] Fila estoque declarada")
 
 	for _, routingKey := range []string{
-		events.PedidoCriado,
-		events.PedidoExcluido,
+		events.OrderCreated,
+		events.OrderDeleted,
 	} {
 		if err := rabbitmq.BindQueue(
 			channel,
@@ -254,7 +254,7 @@ func HandleStockEvent(
 	inventoryFileName string,
 ) error {
 	switch envelope.EventType {
-	case events.PedidoCriado:
+	case events.OrderCreated:
 		var payload events.Order
 
 		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
@@ -323,7 +323,7 @@ func HandleStockEvent(
 				)
 			}
 
-			if err := PublishStockOk(
+			if err := PublishStockConfirmed(
 				channel,
 				privateKey,
 				payload.OrderID,
@@ -367,7 +367,7 @@ func HandleStockEvent(
 				payload.OrderID,
 			)
 		}
-	case events.PedidoExcluido:
+	case events.OrderDeleted:
 		var payload events.OrderReferencePayload
 
 		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
@@ -415,7 +415,7 @@ func HandleStockEvent(
 	return nil
 }
 
-func PublishStockOk(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID string) error {
+func PublishStockConfirmed(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID string) error {
 	fmt.Println("==================================================================")
 	fmt.Printf("                  ESTOQUE VERIFICADO - PEDIDO - %s               \n", orderID)
 	fmt.Println("==================================================================")
@@ -424,10 +424,10 @@ func PublishStockOk(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID s
 		OrderID: orderID,
 	}
 
-	envelope, err := misc.MountSignedEnvelope(
+	envelope, err := misc.BuildSignedEnvelope(
 		payload,
-		events.PedidoEstoqueOk,
-		events.ProducerEstoque,
+		events.OrderStockConfirmed,
+		events.ProducerStock,
 		privateKey,
 	)
 	if err != nil {
@@ -437,7 +437,7 @@ func PublishStockOk(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID s
 	if err := rabbitmq.PublishEvent(
 		channel,
 		events.ExchangeEcommerce,
-		events.PedidoEstoqueOk,
+		events.OrderStockConfirmed,
 		envelope,
 	); err != nil {
 		return fmt.Errorf("erro ao enviar evento: %w", err)
@@ -457,10 +457,10 @@ func PublishStockUnavailable(channel *amqp.Channel, privateKey *rsa.PrivateKey, 
 		Reason:    reservationResult.Reason,
 	}
 
-	envelope, err := misc.MountSignedEnvelope(
+	envelope, err := misc.BuildSignedEnvelope(
 		payload,
-		events.EstoqueIndisponivel,
-		events.ProducerEstoque,
+		events.StockUnavailable,
+		events.ProducerStock,
 		privateKey,
 	)
 	if err != nil {
@@ -470,7 +470,7 @@ func PublishStockUnavailable(channel *amqp.Channel, privateKey *rsa.PrivateKey, 
 	if err := rabbitmq.PublishEvent(
 		channel,
 		events.ExchangeEcommerce,
-		events.EstoqueIndisponivel,
+		events.StockUnavailable,
 		envelope,
 	); err != nil {
 		return fmt.Errorf("erro ao enviar evento: %w", err)

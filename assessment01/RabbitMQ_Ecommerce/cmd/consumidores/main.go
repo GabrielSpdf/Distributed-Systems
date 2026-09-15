@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"RabbitMQ_Ecommerce/microservices/ms-consumidores"
+	msconsumidores "RabbitMQ_Ecommerce/microservices/ms-consumidores"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
@@ -27,13 +27,13 @@ func main() {
 }
 
 func run(consumerType string) error {
-	var msConsumer *msconsumidores.Runtime
+	var promotionConsumer *msconsumidores.Runtime
 	var err error
 
 	if consumerType == "1" {
-		msConsumer, err = msconsumidores.InitMSConsumer(false)
+		promotionConsumer, err = msconsumidores.InitializePromotionConsumer(false)
 	} else {
-		msConsumer, err = msconsumidores.InitMSConsumer(true)
+		promotionConsumer, err = msconsumidores.InitializePromotionConsumer(true)
 	}
 
 	if err != nil {
@@ -42,16 +42,16 @@ func run(consumerType string) error {
 
 	fmt.Printf("[SUCESSO] Microsserviço consumidor %s inicializado com sucesso \n", consumerType)
 
-	defer msConsumer.Connection.Close()
-	defer msConsumer.Channel.Close()
+	defer promotionConsumer.Connection.Close()
+	defer promotionConsumer.Channel.Close()
 
 	fmt.Println("==================================================================")
 	fmt.Printf("                      MICROSSERVIÇO CONSUMIDOR - %s               \n", consumerType)
 	fmt.Println("==================================================================")
 
 	return rabbitmq.ConsumeEvents(
-		msConsumer.Channel,
-		msConsumer.QueueName,
+		promotionConsumer.Channel,
+		promotionConsumer.QueueName,
 		func(envelope events.EventEnvelope) error {
 			return msconsumidores.HandleConsumerEvent(envelope)
 		},

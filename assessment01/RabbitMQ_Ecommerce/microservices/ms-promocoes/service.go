@@ -16,7 +16,7 @@ type Runtime struct {
 	Channel    *amqp.Channel
 }
 
-func InitMSPromocoes() (
+func InitializePromotionService() (
 	*Runtime,
 	error,
 ) {
@@ -68,9 +68,9 @@ func GeneratePromotion(products []events.Product) events.PromotionPayload {
 // categoryRoutingKeys mapeia a categoria real do produto pra routing key
 // exigida pelo enunciado
 var categoryRoutingKeys = map[string]string{
-	"Limpeza":     events.PromocaoCategoriaA,
-	"Alimentos":   events.PromocaoCategoriaB,
-	"Eletrônicos": events.PromocaoCategoriaC,
+	"Limpeza":     events.PromotionCategoryA,
+	"Alimentos":   events.PromotionCategoryB,
+	"Eletrônicos": events.PromotionCategoryC,
 }
 
 // RoutingKeyForCategory retorna a routing key correspondente a categoria do
@@ -85,10 +85,10 @@ func PublishPromotion(
 	payload events.PromotionPayload,
 	routingKey string,
 ) error {
-	envelope, err := misc.MountEnvelope(
+	envelope, err := misc.BuildEnvelope(
 		payload,
 		routingKey,
-		events.ProducerPromocoes,
+		events.ProducerPromotions,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)
@@ -96,7 +96,7 @@ func PublishPromotion(
 
 	if err := rabbitmq.PublishEvent(
 		channel,
-		events.ExchangePromocoes,
+		events.ExchangePromotions,
 		routingKey,
 		envelope,
 	); err != nil {
