@@ -34,6 +34,10 @@ func run() error {
 
 	consumerErrors := make(chan error, 1)
 
+	ordersRepository := msprincipal.NewOrderRepository(
+		"data/orders.json",
+	)
+
 	go func() {
 		err := rabbitmq.ConsumeSignedEvents(
 			msPrincipal.ConsumerChannel,
@@ -42,7 +46,7 @@ func run() error {
 			func(envelope events.EventEnvelope) error {
 				return msprincipal.HandlePrincipalEvent(
 					envelope,
-					"data/orders.json",
+					ordersRepository,
 					msPrincipal.ConsumerChannel,
 					msPrincipal.PrivateKey,
 				)
@@ -85,7 +89,7 @@ func run() error {
 			return err
 		}
 
-		ordersData, err := msprincipal.LoadOrders("data/orders.json")
+		ordersData, err := ordersRepository.Load()
 		if err != nil {
 			return err
 		}
@@ -188,7 +192,7 @@ func run() error {
 				Status:     events.StatusPending,
 			}
 
-			if err := msprincipal.AddOrder("data/orders.json", order, orderID); err != nil {
+			if err := ordersRepository.Add(order, orderID); err != nil {
 				return fmt.Errorf(
 					"erro ao salvar pedido %s: %w",
 					order.OrderID,
@@ -198,7 +202,7 @@ func run() error {
 
 			err = msprincipal.PublishCreateOrder(msPrincipal.PublisherChannel, msPrincipal.PrivateKey, orderPayload)
 			if err != nil {
-				updateStatusErr := msprincipal.UpdateOrderStatus("data/orders.json", orderPayload.OrderID, events.StatusProcessingFailed)
+				updateStatusErr := ordersRepository.UpdateStatus(orderPayload.OrderID, events.StatusProcessingFailed)
 				if updateStatusErr != nil {
 					return fmt.Errorf(
 						"erro ao publicar pedido %s: %w e erro ao atualizar status do pedido: %v",
@@ -232,10 +236,7 @@ func run() error {
 				return err
 			}
 
-			order, err := msprincipal.FindOrder(
-				"data/orders.json",
-				orderID,
-			)
+			order, err := ordersRepository.Find(orderID)
 			if err != nil {
 				fmt.Printf("[ERRO] %s\n", err)
 				continue
@@ -249,10 +250,7 @@ func run() error {
 				continue
 			}
 
-			if err := msprincipal.MarkOrderAsDeleted(
-				"data/orders.json",
-				orderID,
-			); err != nil {
+			if err := ordersRepository.MarkAsDeleted(orderID); err != nil {
 				return fmt.Errorf(
 					"erro ao excluir logicamente o pedido %s: %w",
 					orderID,

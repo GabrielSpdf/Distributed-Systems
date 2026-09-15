@@ -603,7 +603,7 @@ func ShowOrders(orders []events.Order) error {
 
 func HandlePrincipalEvent(
 	envelope events.EventEnvelope,
-	ordersFilePath string,
+	repository *OrderRepository,
 	channel *amqp.Channel,
 	privateKey *rsa.PrivateKey,
 ) error {
@@ -618,8 +618,7 @@ func HandlePrincipalEvent(
 			)
 		}
 
-		if err := UpdateOrderStatus(
-			ordersFilePath,
+		if err := repository.UpdateStatus(
 			payload.OrderID,
 			events.StatusStockReserved,
 		); err != nil {
@@ -645,8 +644,7 @@ func HandlePrincipalEvent(
 			return err
 		}
 
-		if err := UpdateOrderStatus(
-			ordersFilePath,
+		if err := repository.UpdateStatus(
 			payload.OrderID,
 			events.StatusStockUnavailable,
 		); err != nil {
@@ -667,8 +665,7 @@ func HandlePrincipalEvent(
 			)
 		}
 
-		if err := UpdateOrderStatus(
-			ordersFilePath,
+		if err := repository.UpdateStatus(
 			payload.OrderID,
 			events.StatusPaymentApproved,
 		); err != nil {
@@ -694,8 +691,7 @@ func HandlePrincipalEvent(
 			return err
 		}
 
-		if err := UpdateOrderStatus(
-			ordersFilePath,
+		if err := repository.UpdateStatus(
 			payload.OrderID,
 			events.StatusPaymentRefused,
 		); err != nil {
@@ -716,8 +712,7 @@ func HandlePrincipalEvent(
 			)
 		}
 
-		if err := UpdateOrderStatus(
-			ordersFilePath,
+		if err := repository.UpdateStatus(
 			payload.OrderID,
 			events.StatusShipped,
 		); err != nil {
