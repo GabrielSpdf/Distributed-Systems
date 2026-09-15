@@ -38,12 +38,6 @@ func TestCanTransitionOrderStatus(
 			expected:      false,
 		},
 		{
-			name:          "payment approved cannot be deleted",
-			currentStatus: StatusPaymentApproved,
-			nextStatus:    StatusDeleted,
-			expected:      false,
-		},
-		{
 			name:          "repeated status is idempotent",
 			currentStatus: StatusStockReserved,
 			nextStatus:    StatusStockReserved,

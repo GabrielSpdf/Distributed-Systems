@@ -29,15 +29,12 @@ type Order struct {
 type OrderStatus string
 
 const (
-	StatusCreated          OrderStatus = "CRIADO"
 	StatusStockReserved    OrderStatus = "ESTOQUE_RESERVADO"
 	StatusStockUnavailable OrderStatus = "ESTOQUE_INDISPONIVEL"
 	StatusPaymentApproved  OrderStatus = "PAGAMENTO_APROVADO"
 	StatusPaymentRefused   OrderStatus = "PAGAMENTO_RECUSADO"
-	StatusCancelled        OrderStatus = "CANCELADO"
 	StatusShipped          OrderStatus = "ENVIADO"
 	StatusPending          OrderStatus = "PENDENTE"
-	StatusDeleted          OrderStatus = "EXCLUÍDO"
 	StatusProcessingFailed OrderStatus = "FALHA_NO_PROCESSAMENTO"
 )
 
@@ -72,9 +69,4 @@ type OrderShippedPayload struct {
 	OrderID      string `json:"order_id"`
 	InvoiceID    string `json:"invoice_id"`
 	TrackingCode string `json:"tracking_code"`
-}
-
-type InventoryData struct {
-	Products []Product      `json:"products"`
-	Stock    map[string]int `json:"stock"`
 }

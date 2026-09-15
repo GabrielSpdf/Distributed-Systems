@@ -43,7 +43,6 @@ func (repository *OrderRepository) Add(
 	return AddOrder(
 		repository.filePath,
 		order,
-		orderID,
 	)
 }
 

@@ -399,14 +399,13 @@ func SaveOrders(
 func AddOrder(
 	filePath string,
 	order events.Order,
-	orderID int,
 ) error {
 	if order.OrderID == "" {
 		return fmt.Errorf("pedido sem identificador")
 	}
 
 	if order.Status == "" {
-		order.Status = events.StatusCreated
+		order.Status = events.StatusPending
 	}
 
 	ordersData, err := LoadOrders(filePath)
@@ -494,25 +493,6 @@ func UpdateOrderStatus(
 	}
 
 	return fmt.Errorf("pedido %s não encontrado", orderID)
-}
-
-// ListOrders retorna todos os pedidos armazenados.
-func ListOrders(
-	filePath string,
-) ([]events.Order, error) {
-	ordersData, err := LoadOrders(filePath)
-	if err != nil {
-		return nil, err
-	}
-
-	orders := make(
-		[]events.Order,
-		len(ordersData.Orders),
-	)
-
-	copy(orders, ordersData.Orders)
-
-	return orders, nil
 }
 
 // FindOrder procura um pedido pelo identificador.

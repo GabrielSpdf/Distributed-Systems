@@ -10,24 +10,20 @@ func CanTransitionOrderStatus(
 	}
 
 	switch currentStatus {
-	case StatusPending, StatusCreated:
+	case StatusPending:
 		return nextStatus == StatusStockReserved ||
 			nextStatus == StatusStockUnavailable ||
-			nextStatus == StatusDeleted ||
 			nextStatus == StatusProcessingFailed
 
 	case StatusStockReserved:
 		return nextStatus == StatusPaymentApproved ||
-			nextStatus == StatusPaymentRefused ||
-			nextStatus == StatusDeleted
+			nextStatus == StatusPaymentRefused
 
 	case StatusPaymentApproved:
 		return nextStatus == StatusShipped
 
 	case StatusStockUnavailable,
 		StatusPaymentRefused,
-		StatusCancelled,
-		StatusDeleted,
 		StatusShipped,
 		StatusProcessingFailed:
 		return false
