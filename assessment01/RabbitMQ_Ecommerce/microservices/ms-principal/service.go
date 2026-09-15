@@ -18,11 +18,12 @@ import (
 )
 
 type Runtime struct {
-	Connection *amqp.Connection
-	Channel    *amqp.Channel
-	QueueName  string
-	PrivateKey *rsa.PrivateKey
-	PublicKeys cryptography.PublicKeyRegistry
+	Connection       *amqp.Connection
+	ConsumerChannel  *amqp.Channel
+	PublisherChannel *amqp.Channel
+	QueueName        string
+	PrivateKey       *rsa.PrivateKey
+	PublicKeys       cryptography.PublicKeyRegistry
 }
 
 func InitMSPrincipal() (
@@ -35,18 +36,29 @@ func InitMSPrincipal() (
 	}
 	log.Println("[SUCESSO] Conexão estabelecida com o RabbitMQ")
 
-	channel, err := rabbitmq.OpenChannel(connection)
+	consumerChannel, err := rabbitmq.OpenChannel(connection)
 	if err != nil {
 		connection.Close()
 		return nil, err
 	}
-	log.Println("[SUCESSO] Canal RabbitMQ aberto")
+
+	log.Println("[SUCESSO] Canal de consumo RabbitMQ aberto")
+
+	publisherChannel, err := rabbitmq.OpenChannel(connection)
+	if err != nil {
+		publisherChannel.Close()
+		consumerChannel.Close()
+		connection.Close()
+		return nil, err
+	}
+
+	log.Println("[SUCESSO] Canal de publicação RabbitMQ aberto")
 
 	privateKey, err := cryptography.LoadPrivateKey("keys/ms-principal/private.pem")
 	if err != nil {
-		channel.Close()
+		publisherChannel.Close()
+		consumerChannel.Close()
 		connection.Close()
-
 		return nil, fmt.Errorf(
 			"erro ao carregar chave privada do Principal: %w",
 			err,
@@ -63,7 +75,8 @@ func InitMSPrincipal() (
 		},
 	)
 	if err != nil {
-		channel.Close()
+		publisherChannel.Close()
+		consumerChannel.Close()
 		connection.Close()
 
 		return nil, fmt.Errorf(
@@ -72,19 +85,21 @@ func InitMSPrincipal() (
 		)
 	}
 
-	if err := rabbitmq.DeclareExchanges(channel); err != nil {
-		channel.Close()
+	if err := rabbitmq.DeclareExchanges(consumerChannel); err != nil {
+		consumerChannel.Close()
+		publisherChannel.Close()
 		connection.Close()
 		return nil, err
 	}
 	log.Println("[SUCESSO] Exchanges declaradas")
 
 	principalQueue, err := rabbitmq.DeclareQueue(
-		channel,
+		consumerChannel,
 		events.QueuePrincipal,
 	)
 	if err != nil {
-		channel.Close()
+		consumerChannel.Close()
+		publisherChannel.Close()
 		connection.Close()
 		return nil, err
 	}
@@ -98,12 +113,13 @@ func InitMSPrincipal() (
 		events.PedidoEnviado,
 	} {
 		if err := rabbitmq.BindQueue(
-			channel,
+			consumerChannel,
 			principalQueue.Name,
 			routingKey,
 			events.ExchangeEcommerce,
 		); err != nil {
-			channel.Close()
+			consumerChannel.Close()
+			publisherChannel.Close()
 			connection.Close()
 			return nil, err
 		}
@@ -111,11 +127,12 @@ func InitMSPrincipal() (
 	}
 
 	runtime := &Runtime{
-		Connection: connection,
-		Channel:    channel,
-		QueueName:  principalQueue.Name,
-		PrivateKey: privateKey,
-		PublicKeys: publicKeys,
+		Connection:       connection,
+		ConsumerChannel:  consumerChannel,
+		PublisherChannel: publisherChannel,
+		QueueName:        principalQueue.Name,
+		PrivateKey:       privateKey,
+		PublicKeys:       publicKeys,
 	}
 
 	return runtime, nil

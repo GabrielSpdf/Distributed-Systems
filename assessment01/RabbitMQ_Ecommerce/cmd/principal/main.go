@@ -29,20 +29,21 @@ func run() error {
 	fmt.Print("\033[H\033[2J")
 
 	defer msPrincipal.Connection.Close()
-	defer msPrincipal.Channel.Close()
+	defer msPrincipal.PublisherChannel.Close()
+	defer msPrincipal.ConsumerChannel.Close()
 
 	consumerErrors := make(chan error, 1)
 
 	go func() {
 		err := rabbitmq.ConsumeSignedEvents(
-			msPrincipal.Channel,
+			msPrincipal.ConsumerChannel,
 			msPrincipal.QueueName,
 			msPrincipal.PublicKeys,
 			func(envelope events.EventEnvelope) error {
 				return msprincipal.HandlePrincipalEvent(
 					envelope,
 					"data/orders.json",
-					msPrincipal.Channel,
+					msPrincipal.ConsumerChannel,
 					msPrincipal.PrivateKey,
 				)
 			},
@@ -195,7 +196,7 @@ func run() error {
 				)
 			}
 
-			err = msprincipal.PublishCreateOrder(msPrincipal.Channel, msPrincipal.PrivateKey, orderPayload)
+			err = msprincipal.PublishCreateOrder(msPrincipal.PublisherChannel, msPrincipal.PrivateKey, orderPayload)
 			if err != nil {
 				updateStatusErr := msprincipal.UpdateOrderStatus("data/orders.json", orderPayload.OrderID, events.StatusProcessingFailed)
 				if updateStatusErr != nil {
