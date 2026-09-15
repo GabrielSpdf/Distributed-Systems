@@ -35,7 +35,6 @@ func (repository *OrderRepository) Load() (
 // Add adds an order to the repository.
 func (repository *OrderRepository) Add(
 	order events.Order,
-	orderID int,
 ) error {
 	repository.mutex.Lock()
 	defer repository.mutex.Unlock()

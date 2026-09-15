@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	msprincipal "RabbitMQ_Ecommerce/microservices/ms-principal"
+	"RabbitMQ_Ecommerce/microservices/ms-principal"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/inventory"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
@@ -13,8 +13,10 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		log.Println("[ERRO] Erro ao executar o sistema:", err)
-		log.Fatal(err)
+		log.Fatalf(
+			"[ERRO] Erro ao executar o sistema: %v",
+			err,
+		)
 	}
 }
 
@@ -192,7 +194,7 @@ func run() error {
 				Status:     events.StatusPending,
 			}
 
-			if err := ordersRepository.Add(order, orderID); err != nil {
+			if err := ordersRepository.Add(order); err != nil {
 				return fmt.Errorf(
 					"erro ao salvar pedido %s: %w",
 					order.OrderID,
