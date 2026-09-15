@@ -1,33 +1,35 @@
 package main
 
 import (
-	"log"
 	"fmt"
+	"log"
 
-	"RabbitMQ_Ecommerce/microservices/ms-estoque"
-	"RabbitMQ_Ecommerce/utils/rabbitmq"
+	msestoque "RabbitMQ_Ecommerce/microservices/ms-estoque"
+	msprincipal "RabbitMQ_Ecommerce/microservices/ms-principal"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/inventory"
-	"RabbitMQ_Ecommerce/microservices/ms-principal"
+	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
 
 func main() {
 	if err := run(); err != nil {
-		log.Println("[ERRO] Erro ao executar o sistema:", err)
-		log.Fatal(err)
+		log.Fatalf(
+			"[ERRO] Erro ao executar o sistema: %v",
+			err,
+		)
 	}
 }
 
 func run() error {
-	msEstoque, err := msestoque.InitMSEstoque()
+	stockService, err := msestoque.InitializeStockService()
 	if err != nil {
 		return err
 	}
 
 	fmt.Println("[SUCESSO] Microsserviço estoque inicializado com sucesso")
 
-	defer msEstoque.Connection.Close()
-	defer msEstoque.Channel.Close()
+	defer stockService.Connection.Close()
+	defer stockService.Channel.Close()
 
 	fmt.Println("==================================================================")
 	fmt.Println("                      MICROSSERVIÇO ESTOQUE                       ")
@@ -47,7 +49,7 @@ func run() error {
 
 	reservations := make(map[string]events.Order)
 
-for _, order := range ordersData.Orders {
+	for _, order := range ordersData.Orders {
 		if order.Status == events.StatusStockReserved ||
 			order.Status == events.StatusPaymentApproved ||
 			order.Status == events.StatusShipped {
@@ -55,11 +57,12 @@ for _, order := range ordersData.Orders {
 		}
 	}
 
-	return rabbitmq.ConsumeEvents(
-		msEstoque.Channel,
-		msEstoque.QueueName,
+	return rabbitmq.ConsumeSignedEvents(
+		stockService.Channel,
+		stockService.QueueName,
+		stockService.PublicKeys,
 		func(envelope events.EventEnvelope) error {
-			return msestoque.HandleStockEvent(envelope, stock, reservations, msEstoque.Channel, "inventory.json")
+			return msestoque.HandleStockEvent(envelope, stock, reservations, stockService.Channel, stockService.PrivateKey, "inventory.json")
 		},
 	)
 }

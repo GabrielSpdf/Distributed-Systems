@@ -1,14 +1,16 @@
 package msestoque
 
 import (
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"log"
 
+	"RabbitMQ_Ecommerce/utils/cryptography"
 	"RabbitMQ_Ecommerce/utils/events"
+	"RabbitMQ_Ecommerce/utils/inventory"
 	"RabbitMQ_Ecommerce/utils/misc"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
-	"RabbitMQ_Ecommerce/utils/inventory"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -17,9 +19,11 @@ type Runtime struct {
 	Connection *amqp.Connection
 	Channel    *amqp.Channel
 	QueueName  string
+	PrivateKey *rsa.PrivateKey
+	PublicKeys cryptography.PublicKeyRegistry
 }
 
-func InitMSEstoque() (
+func InitializeStockService() (
 	*Runtime,
 	error,
 ) {
@@ -36,6 +40,32 @@ func InitMSEstoque() (
 	}
 	log.Println("[SUCESSO] Canal RabbitMQ aberto")
 
+	privateKey, err := cryptography.LoadPrivateKey("keys/ms-estoque/private.pem")
+	if err != nil {
+		channel.Close()
+		connection.Close()
+
+		return nil, fmt.Errorf(
+			"erro ao carregar chave privada do Estoque: %w",
+			err,
+		)
+	}
+
+	publicKeys, err := cryptography.LoadPublicKeyRegistry(
+		map[string]string{
+			events.ProducerPrincipal: "keys/ms-estoque/public_keys/ms-principal.pem",
+		},
+	)
+	if err != nil {
+		channel.Close()
+		connection.Close()
+
+		return nil, fmt.Errorf(
+			"erro ao carregar chaves públicas do Estoque: %w",
+			err,
+		)
+	}
+
 	if err := rabbitmq.DeclareExchanges(channel); err != nil {
 		channel.Close()
 		connection.Close()
@@ -45,7 +75,7 @@ func InitMSEstoque() (
 
 	stockQueue, err := rabbitmq.DeclareQueue(
 		channel,
-		events.QueueEstoque,
+		events.QueueStock,
 	)
 	if err != nil {
 		channel.Close()
@@ -55,8 +85,8 @@ func InitMSEstoque() (
 	log.Println("[SUCESSO] Fila estoque declarada")
 
 	for _, routingKey := range []string{
-		events.PedidoCriado,
-		events.PedidoExcluido,
+		events.OrderCreated,
+		events.OrderDeleted,
 	} {
 		if err := rabbitmq.BindQueue(
 			channel,
@@ -71,34 +101,42 @@ func InitMSEstoque() (
 		log.Println("[SUCESSO] Fila estoque ligada à exchange Ecommerce e vinculada ao roteamento", routingKey)
 	}
 
-	runTime := &Runtime{
+	runtime := &Runtime{
 		Connection: connection,
 		Channel:    channel,
 		QueueName:  stockQueue.Name,
+		PrivateKey: privateKey,
+		PublicKeys: publicKeys,
 	}
 
-	return runTime, nil
+	return runtime, nil
+}
+
+type StockReservationResult struct {
+	Available bool
+	ProductID string
+	Reason    string
 }
 
 func ReserveStock(
 	stock map[string]int,
 	reservations map[string]events.Order,
 	order events.Order,
-) (bool, error) {
+) (StockReservationResult, error) {
 	if order.OrderID == "" {
-		return true, fmt.Errorf("pedido sem identificador")
+		return StockReservationResult{}, fmt.Errorf("pedido sem identificador")
 	}
 
 	if reservations == nil {
-		return true, fmt.Errorf("mapa de reservas não inicializado")
+		return StockReservationResult{}, fmt.Errorf("mapa de reservas não inicializado")
 	}
 
 	if _, exists := reservations[order.OrderID]; exists {
-		return true, fmt.Errorf("pedido já reservado: %s", order.OrderID)
+		return StockReservationResult{}, fmt.Errorf("pedido já reservado: %s", order.OrderID)
 	}
 
 	if len(order.Items) == 0 {
-		return true, fmt.Errorf(
+		return StockReservationResult{}, fmt.Errorf(
 			"nenhum item fornecido para o pedido %s",
 			order.OrderID,
 		)
@@ -110,11 +148,11 @@ func ReserveStock(
 	// Agrupa produtos repetidos sem alterar o estoque.
 	for _, item := range order.Items {
 		if item.Product.ID == "" {
-			return true, fmt.Errorf("produto sem identificador no pedido %s", order.OrderID)
+			return StockReservationResult{}, fmt.Errorf("produto sem identificador no pedido %s", order.OrderID)
 		}
 
 		if item.Quantity <= 0 {
-			return true, fmt.Errorf(
+			return StockReservationResult{}, fmt.Errorf(
 				"quantidade inválida para o produto %s: %d",
 				item.Product.ID,
 				item.Quantity,
@@ -136,13 +174,25 @@ func ReserveStock(
 	for _, productID := range itemOrder {
 		item := groupedItems[productID]
 
-		available, exists := stock[productID]
+		availableQuantity, exists := stock[productID]
 		if !exists {
-			return false, nil
+			return StockReservationResult{
+				Available: false,
+				ProductID: productID,
+				Reason:    "produto não encontrado no estoque",
+			}, nil
 		}
 
-		if item.Quantity > available {
-			return false, nil
+		if item.Quantity > availableQuantity {
+			return StockReservationResult{
+				Available: false,
+				ProductID: productID,
+				Reason: fmt.Sprintf(
+					"estoque insuficiente: solicitado %d, disponível %d",
+					item.Quantity,
+					availableQuantity,
+				),
+			}, nil
 		}
 	}
 
@@ -159,7 +209,9 @@ func ReserveStock(
 
 	reservations[order.OrderID] = reservedOrder
 
-	return true, nil
+	return StockReservationResult{
+		Available: true,
+	}, nil
 }
 
 func ReleaseStock(
@@ -198,10 +250,11 @@ func HandleStockEvent(
 	stock map[string]int,
 	reservations map[string]events.Order,
 	channel *amqp.Channel,
+	privateKey *rsa.PrivateKey,
 	inventoryFileName string,
 ) error {
 	switch envelope.EventType {
-	case events.PedidoCriado:
+	case events.OrderCreated:
 		var payload events.Order
 
 		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
@@ -211,7 +264,7 @@ func HandleStockEvent(
 			)
 		}
 
-		isAvailable, err := ReserveStock(
+		reservationResult, err := ReserveStock(
 			stock,
 			reservations,
 			payload,
@@ -224,19 +277,23 @@ func HandleStockEvent(
 			)
 		}
 
-		if !isAvailable {
+		if !reservationResult.Available {
 			log.Printf(
-				"[ERRO] Estoque insuficiente para o pedido %s",
+				"[AVISO] Estoque indisponível para o pedido %s: produto=%s motivo=%s",
 				payload.OrderID,
+				reservationResult.ProductID,
+				reservationResult.Reason,
 			)
 
 			err := PublishStockUnavailable(
 				channel,
+				privateKey,
 				payload.OrderID,
+				reservationResult,
 			)
 			if err != nil {
 				return fmt.Errorf(
-					"erro ao publicar pedido.estoque_indisponivel: %w",
+					"erro ao publicar estoque.indisponivel: %w",
 					err,
 				)
 			}
@@ -245,6 +302,20 @@ func HandleStockEvent(
 				inventoryFileName,
 				stock,
 			); err != nil {
+				// A reserva já modificou os mapas em memória.
+				if releaseErr := ReleaseStock(
+					stock,
+					reservations,
+					payload.OrderID,
+				); releaseErr != nil {
+					return fmt.Errorf(
+						"erro ao persistir baixa do pedido %s e erro ao desfazer reserva: %v; erro original: %w",
+						payload.OrderID,
+						releaseErr,
+						err,
+					)
+				}
+
 				return fmt.Errorf(
 					"erro ao persistir baixa do pedido %s: %w",
 					payload.OrderID,
@@ -252,13 +323,41 @@ func HandleStockEvent(
 				)
 			}
 
-			err := PublishStockOk(
+			if err := PublishStockConfirmed(
 				channel,
+				privateKey,
 				payload.OrderID,
-			)
-			if err != nil {
+			); err != nil {
+				// Desfaz a alteração em memória.
+				if releaseErr := ReleaseStock(
+					stock,
+					reservations,
+					payload.OrderID,
+				); releaseErr != nil {
+					return fmt.Errorf(
+						"erro ao publicar estoque reservado para o pedido %s e erro ao desfazer reserva: %v; erro original: %w",
+						payload.OrderID,
+						releaseErr,
+						err,
+					)
+				}
+
+				// Persiste o estoque restaurado.
+				if saveErr := inventory.SaveStock(
+					inventoryFileName,
+					stock,
+				); saveErr != nil {
+					return fmt.Errorf(
+						"erro ao publicar estoque reservado para o pedido %s e erro ao persistir rollback: %v; erro original: %w",
+						payload.OrderID,
+						saveErr,
+						err,
+					)
+				}
+
 				return fmt.Errorf(
-					"erro ao publicar pedido.estoque_ok: %w",
+					"erro ao publicar pedido.estoque_ok do pedido %s; reserva desfeita: %w",
+					payload.OrderID,
 					err,
 				)
 			}
@@ -268,8 +367,7 @@ func HandleStockEvent(
 				payload.OrderID,
 			)
 		}
-
-	case events.PedidoExcluido:
+	case events.OrderDeleted:
 		var payload events.OrderReferencePayload
 
 		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
@@ -317,7 +415,7 @@ func HandleStockEvent(
 	return nil
 }
 
-func PublishStockOk(channel *amqp.Channel, orderID string) error {
+func PublishStockConfirmed(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID string) error {
 	fmt.Println("==================================================================")
 	fmt.Printf("                  ESTOQUE VERIFICADO - PEDIDO - %s               \n", orderID)
 	fmt.Println("==================================================================")
@@ -326,11 +424,11 @@ func PublishStockOk(channel *amqp.Channel, orderID string) error {
 		OrderID: orderID,
 	}
 
-	envelope, err := misc.MountEnvelope(
+	envelope, err := misc.BuildSignedEnvelope(
 		payload,
-		events.PedidoEstoqueOk,
-		"ms-estoque",
-		"signature",
+		events.OrderStockConfirmed,
+		events.ProducerStock,
+		privateKey,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)
@@ -339,7 +437,7 @@ func PublishStockOk(channel *amqp.Channel, orderID string) error {
 	if err := rabbitmq.PublishEvent(
 		channel,
 		events.ExchangeEcommerce,
-		events.PedidoEstoqueOk,
+		events.OrderStockConfirmed,
 		envelope,
 	); err != nil {
 		return fmt.Errorf("erro ao enviar evento: %w", err)
@@ -348,20 +446,22 @@ func PublishStockOk(channel *amqp.Channel, orderID string) error {
 	return nil
 }
 
-func PublishStockUnavailable(channel *amqp.Channel, orderID string) error {
+func PublishStockUnavailable(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID string, reservationResult StockReservationResult) error {
 	fmt.Println("==================================================================")
 	fmt.Printf("                  ESTOQUE INDISPONÍVEL - PEDIDO - %s               \n", orderID)
 	fmt.Println("==================================================================")
 
-	payload := events.OrderReferencePayload{
-		OrderID: orderID,
+	payload := events.StockUnavailablePayload{
+		OrderID:   orderID,
+		ProductID: reservationResult.ProductID,
+		Reason:    reservationResult.Reason,
 	}
 
-	envelope, err := misc.MountEnvelope(
+	envelope, err := misc.BuildSignedEnvelope(
 		payload,
-		events.EstoqueIndisponivel,
-		"ms-estoque",
-		"signature",
+		events.StockUnavailable,
+		events.ProducerStock,
+		privateKey,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)
@@ -370,7 +470,7 @@ func PublishStockUnavailable(channel *amqp.Channel, orderID string) error {
 	if err := rabbitmq.PublishEvent(
 		channel,
 		events.ExchangeEcommerce,
-		events.EstoqueIndisponivel,
+		events.StockUnavailable,
 		envelope,
 	); err != nil {
 		return fmt.Errorf("erro ao enviar evento: %w", err)

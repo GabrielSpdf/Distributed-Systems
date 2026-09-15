@@ -10,9 +10,9 @@ type Product struct {
 
 // Representa um produto e sua respectiva quantidade dentro de um pedido
 type OrderItem struct {
-	Product   Product  `json:"product"`
-	Quantity  int      `json:"quantity"`
-	Price     float64  `json:"price"`
+	Product  Product `json:"product"`
+	Quantity int     `json:"quantity"`
+	Price    float64 `json:"price"`
 }
 
 // Representa um pedido mantido pelo microsserviço Principal
@@ -22,19 +22,20 @@ type Order struct {
 	Items      []OrderItem `json:"items"`
 	Total      float64     `json:"total"`
 	Status     OrderStatus `json:"status"`
+	IsDeleted  bool        `json:"is_deleted"`
 }
 
 // Representa um possível estado de processamento de um pedido
 type OrderStatus string
 
 const (
-	StatusCreated          OrderStatus = "CRIADO"
 	StatusStockReserved    OrderStatus = "ESTOQUE_RESERVADO"
 	StatusStockUnavailable OrderStatus = "ESTOQUE_INDISPONIVEL"
 	StatusPaymentApproved  OrderStatus = "PAGAMENTO_APROVADO"
 	StatusPaymentRefused   OrderStatus = "PAGAMENTO_RECUSADO"
-	StatusCancelled        OrderStatus = "CANCELADO"
 	StatusShipped          OrderStatus = "ENVIADO"
+	StatusPending          OrderStatus = "PENDENTE"
+	StatusProcessingFailed OrderStatus = "FALHA_NO_PROCESSAMENTO"
 )
 
 // Representa o conteúdo do evento pedido.criado
@@ -50,7 +51,7 @@ type OrderReferencePayload struct {
 	OrderID string `json:"order_id"`
 }
 
-// Rrepresenta o conteúdo do evento estoque.indisponivel
+// StockUnavailablePayload representa o conteúdo do evento estoque.indisponivel
 type StockUnavailablePayload struct {
 	OrderID   string `json:"order_id"`
 	ProductID string `json:"product_id"`
@@ -68,9 +69,4 @@ type OrderShippedPayload struct {
 	OrderID      string `json:"order_id"`
 	InvoiceID    string `json:"invoice_id"`
 	TrackingCode string `json:"tracking_code"`
-}
-
-type InventoryData struct {
-	Products []Product        `json:"products"`
-	Stock    map[string]int   `json:"stock"`
 }

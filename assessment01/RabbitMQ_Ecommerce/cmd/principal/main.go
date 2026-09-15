@@ -13,13 +13,15 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		log.Println("[ERRO] Erro ao executar o sistema:", err)
-		log.Fatal(err)
+		log.Fatalf(
+			"[ERRO] Erro ao executar o sistema: %v",
+			err,
+		)
 	}
 }
 
 func run() error {
-	msPrincipal, err := msprincipal.InitMSPrincipal()
+	principalService, err := msprincipal.InitializePrincipalService()
 	if err != nil {
 		return err
 	}
@@ -28,20 +30,27 @@ func run() error {
 	time.Sleep(3 * time.Second)
 	fmt.Print("\033[H\033[2J")
 
-	defer msPrincipal.Connection.Close()
-	defer msPrincipal.Channel.Close()
+	defer principalService.Connection.Close()
+	defer principalService.PublisherChannel.Close()
+	defer principalService.ConsumerChannel.Close()
 
 	consumerErrors := make(chan error, 1)
 
+	ordersRepository := msprincipal.NewOrderRepository(
+		"data/orders.json",
+	)
+
 	go func() {
-		err := rabbitmq.ConsumeEvents(
-			msPrincipal.Channel,
-			msPrincipal.QueueName,
+		err := rabbitmq.ConsumeSignedEvents(
+			principalService.ConsumerChannel,
+			principalService.QueueName,
+			principalService.PublicKeys,
 			func(envelope events.EventEnvelope) error {
 				return msprincipal.HandlePrincipalEvent(
 					envelope,
-					"data/orders.json",
-					msPrincipal.Channel,
+					ordersRepository,
+					principalService.ConsumerChannel,
+					principalService.PrivateKey,
 				)
 			},
 		)
@@ -66,7 +75,7 @@ func run() error {
 		fmt.Println("==================================================================")
 		fmt.Println("1. Visualizar produtos")
 		fmt.Println("2. Realizar pedido")
-		fmt.Println("3. Excluir pedido")
+		fmt.Println("3. Excluir pedido (Remover da visualização)")
 		fmt.Println("4. Consultar pedidos realizados")
 		fmt.Println("5. Sair")
 
@@ -82,10 +91,14 @@ func run() error {
 			return err
 		}
 
-		ordersData, err := msprincipal.LoadOrders("data/orders.json")
+		ordersData, err := ordersRepository.Load()
 		if err != nil {
 			return err
 		}
+
+		visibleOrders := msprincipal.FilterVisibleOrders(
+			ordersData.Orders,
+		)
 
 		orderID := ordersData.NextOrderID
 
@@ -168,9 +181,9 @@ func run() error {
 				}
 			}
 
-			orderPayload,err := msprincipal.PublishCreateOrder(msPrincipal.Channel, orderID, orderItems)
+			orderPayload, err := msprincipal.CreateOrder(orderID, orderItems)
 			if err != nil {
-				return err
+				return fmt.Errorf("erro ao criar pedido: %w", err)
 			}
 
 			order = events.Order{
@@ -178,10 +191,10 @@ func run() error {
 				CustomerID: orderPayload.CustomerID,
 				Items:      orderPayload.Items,
 				Total:      orderPayload.Total,
-Status:     events.StatusCreated,
+				Status:     events.StatusPending,
 			}
 
-			if err := msprincipal.AddOrder("data/orders.json", order, orderID); err != nil {
+			if err := ordersRepository.Add(order); err != nil {
 				return fmt.Errorf(
 					"erro ao salvar pedido %s: %w",
 					order.OrderID,
@@ -189,46 +202,71 @@ Status:     events.StatusCreated,
 				)
 			}
 
+			err = msprincipal.PublishOrderCreated(principalService.PublisherChannel, principalService.PrivateKey, orderPayload)
+			if err != nil {
+				updateStatusErr := ordersRepository.UpdateStatus(orderPayload.OrderID, events.StatusProcessingFailed)
+				if updateStatusErr != nil {
+					return fmt.Errorf(
+						"erro ao publicar pedido %s: %w e erro ao atualizar status do pedido: %v",
+						orderPayload.OrderID,
+						err,
+						updateStatusErr,
+					)
+				}
+				return fmt.Errorf(
+					"pedido %s registrado como %s após falha na publicação: %w",
+					orderPayload.OrderID,
+					events.StatusProcessingFailed,
+					err,
+				)
+			}
+
 		case 3:
 			// Excluir pedido
-			if len(ordersData.Orders) == 0 {
+			if len(visibleOrders) == 0 {
 				fmt.Println("==================================================================")
-				fmt.Println("Nenhum pedido cadastrado para exclusão.")
+				fmt.Println("Nenhum pedido disponível para exclusão.")
 				continue
 			}
 
-			if err := msprincipal.ShowOrders(ordersData.Orders); err != nil {
+			if err := msprincipal.ShowOrders(visibleOrders); err != nil {
 				return err
 			}
 
-			orderID, err := msprincipal.SelectOrderToDelete()
+			orderID, err := msprincipal.SelectOrderToHide()
 			if err != nil {
 				return err
 			}
 
-			if _, err := msprincipal.FindOrder("data/orders.json", orderID); err != nil {
+			order, err := ordersRepository.Find(orderID)
+			if err != nil {
 				fmt.Printf("[ERRO] %s\n", err)
 				continue
 			}
 
-			err = msprincipal.PublishDeleteOrder(msPrincipal.Channel, orderID)
-			if err != nil {
-				return err
+			if order.IsDeleted {
+				fmt.Printf(
+					"[ERRO] Pedido %s já foi removido da visualização\n",
+					orderID,
+				)
+				continue
 			}
 
-			err = msprincipal.UpdateOrderStatus("data/orders.json", orderID, events.StatusCancelled)
-			if err != nil {
+			if err := ordersRepository.MarkAsDeleted(orderID); err != nil {
 				return fmt.Errorf(
-					"erro ao atualizar status do pedido %s: %w",
+					"erro ao excluir logicamente o pedido %s: %w",
 					orderID,
 					err,
 				)
 			}
 
-			fmt.Printf("[SUCESSO] Pedido %s excluído com sucesso\n", orderID)
+			fmt.Printf(
+				"[SUCESSO] Pedido %s removido da visualização\n",
+				orderID,
+			)
 		case 4:
 			// Consultar pedidos realizados
-			if err := msprincipal.ShowOrders(ordersData.Orders); err != nil {
+			if err := msprincipal.ShowOrders(visibleOrders); err != nil {
 				return err
 			}
 

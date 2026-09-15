@@ -1,27 +1,33 @@
 package msprincipal
 
 import (
+	"crypto/rsa"
+	"encoding/json"
 	"fmt"
 	"log"
-	"encoding/json"
-	"text/tabwriter"
 	"os"
+	"text/tabwriter"
 
+	"RabbitMQ_Ecommerce/utils/cryptography"
 	"RabbitMQ_Ecommerce/utils/events"
-	"RabbitMQ_Ecommerce/utils/rabbitmq"
-	"RabbitMQ_Ecommerce/utils/misc"
 	"RabbitMQ_Ecommerce/utils/inventory"
+	"RabbitMQ_Ecommerce/utils/misc"
+	"RabbitMQ_Ecommerce/utils/rabbitmq"
+	"RabbitMQ_Ecommerce/utils/storage"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type Runtime struct {
-	Connection *amqp.Connection
-	Channel    *amqp.Channel
-	QueueName  string
+	Connection       *amqp.Connection
+	ConsumerChannel  *amqp.Channel
+	PublisherChannel *amqp.Channel
+	QueueName        string
+	PrivateKey       *rsa.PrivateKey
+	PublicKeys       cryptography.PublicKeyRegistry
 }
 
-func InitMSPrincipal() (
+func InitializePrincipalService() (
 	*Runtime,
 	error,
 ) {
@@ -31,67 +37,115 @@ func InitMSPrincipal() (
 	}
 	log.Println("[SUCESSO] Conexão estabelecida com o RabbitMQ")
 
-	channel, err := rabbitmq.OpenChannel(connection)
+	consumerChannel, err := rabbitmq.OpenChannel(connection)
 	if err != nil {
 		connection.Close()
 		return nil, err
 	}
-	log.Println("[SUCESSO] Canal RabbitMQ aberto")
 
-	if err := rabbitmq.DeclareExchanges(channel); err != nil {
-		channel.Close()
+	log.Println("[SUCESSO] Canal de consumo RabbitMQ aberto")
+
+	publisherChannel, err := rabbitmq.OpenChannel(connection)
+	if err != nil {
+		publisherChannel.Close()
+		consumerChannel.Close()
+		connection.Close()
+		return nil, err
+	}
+
+	log.Println("[SUCESSO] Canal de publicação RabbitMQ aberto")
+
+	privateKey, err := cryptography.LoadPrivateKey("keys/ms-principal/private.pem")
+	if err != nil {
+		publisherChannel.Close()
+		consumerChannel.Close()
+		connection.Close()
+		return nil, fmt.Errorf(
+			"erro ao carregar chave privada do Principal: %w",
+			err,
+		)
+	}
+
+	publicKeys, err := cryptography.LoadPublicKeyRegistry(
+		map[string]string{
+			events.ProducerStock: "keys/ms-principal/public_keys/ms-estoque.pem",
+
+			events.ProducerPayment: "keys/ms-principal/public_keys/ms-pagamento.pem",
+
+			events.ProducerDelivery: "keys/ms-principal/public_keys/ms-entrega.pem",
+		},
+	)
+	if err != nil {
+		publisherChannel.Close()
+		consumerChannel.Close()
+		connection.Close()
+
+		return nil, fmt.Errorf(
+			"erro ao carregar chave publica do Principal: %w",
+			err,
+		)
+	}
+
+	if err := rabbitmq.DeclareExchanges(consumerChannel); err != nil {
+		consumerChannel.Close()
+		publisherChannel.Close()
 		connection.Close()
 		return nil, err
 	}
 	log.Println("[SUCESSO] Exchanges declaradas")
 
 	principalQueue, err := rabbitmq.DeclareQueue(
-		channel,
+		consumerChannel,
 		events.QueuePrincipal,
 	)
 	if err != nil {
-		channel.Close()
+		consumerChannel.Close()
+		publisherChannel.Close()
 		connection.Close()
 		return nil, err
 	}
 	log.Println("[SUCESSO] Fila principal declarada")
-	
+
 	for _, routingKey := range []string{
-		events.PedidoEstoqueOk,
-		events.EstoqueIndisponivel,
-		events.PagamentoAprovado,
-		events.PagamentoRecusado,
-		events.PedidoEnviado,
+		events.OrderStockConfirmed,
+		events.StockUnavailable,
+		events.PaymentApproved,
+		events.PaymentRefused,
+		events.OrderShipped,
 	} {
 		if err := rabbitmq.BindQueue(
-			channel,
+			consumerChannel,
 			principalQueue.Name,
 			routingKey,
 			events.ExchangeEcommerce,
 		); err != nil {
-			channel.Close()
+			consumerChannel.Close()
+			publisherChannel.Close()
 			connection.Close()
 			return nil, err
 		}
 		log.Println("[SUCESSO] Fila principal ligada à exchange Ecommerce e vinculada ao roteamento", routingKey)
 	}
 
-	runTime := &Runtime{
-		Connection: connection,
-		Channel:    channel,
-		QueueName:  principalQueue.Name,
+	runtime := &Runtime{
+		Connection:       connection,
+		ConsumerChannel:  consumerChannel,
+		PublisherChannel: publisherChannel,
+		QueueName:        principalQueue.Name,
+		PrivateKey:       privateKey,
+		PublicKeys:       publicKeys,
 	}
 
-	return runTime, nil
+	return runtime, nil
 }
 
-func PublishCreateOrder(channel *amqp.Channel, orderID int, orderItems []events.OrderItem) (events.OrderCreatedPayload, error) {
+func CreateOrder(orderID int, orderItems []events.OrderItem) (events.OrderCreatedPayload, error) {
 	fmt.Println("==================================================================")
 	fmt.Printf("                         CRIANDO PEDIDO - %d               \n", orderID)
 	fmt.Println("==================================================================")
 
 	if len(orderItems) == 0 {
-		return events.OrderCreatedPayload{},fmt.Errorf("pedido sem itens")
+		return events.OrderCreatedPayload{}, fmt.Errorf("pedido sem itens")
 	}
 
 	var total float64
@@ -118,23 +172,28 @@ func PublishCreateOrder(channel *amqp.Channel, orderID int, orderItems []events.
 		Total:      total,
 	}
 
-	envelope, err := misc.MountEnvelope(
+	return order, nil
+}
+
+func PublishOrderCreated(channel *amqp.Channel, privateKey *rsa.PrivateKey, order events.OrderCreatedPayload) error {
+
+	envelope, err := misc.BuildSignedEnvelope(
 		order,
-		events.PedidoCriado,
-		"ms-principal",
-		"signature",
-	)		
+		events.OrderCreated,
+		events.ProducerPrincipal,
+		privateKey,
+	)
 	if err != nil {
-		return events.OrderCreatedPayload{}, fmt.Errorf("erro ao montar envelope: %w", err)
+		return fmt.Errorf("erro ao montar envelope: %w", err)
 	}
 
 	if err := rabbitmq.PublishEvent(
 		channel,
 		events.ExchangeEcommerce,
-		events.PedidoCriado,
+		events.OrderCreated,
 		envelope,
 	); err != nil {
-		return events.OrderCreatedPayload{}, fmt.Errorf("erro ao enviar evento: %w", err)
+		return fmt.Errorf("erro ao enviar evento: %w", err)
 	}
 
 	fmt.Printf(
@@ -144,19 +203,19 @@ func PublishCreateOrder(channel *amqp.Channel, orderID int, orderItems []events.
 		order.Total,
 	)
 
-	return order, nil
+	return nil
 }
 
-func PublishDeleteOrder(channel *amqp.Channel, orderID string) error {
+func PublishOrderDeleted(channel *amqp.Channel, privateKey *rsa.PrivateKey, orderID string) error {
 	payload := events.OrderReferencePayload{
 		OrderID: orderID,
 	}
 
-	envelope, err := misc.MountEnvelope(
+	envelope, err := misc.BuildSignedEnvelope(
 		payload,
-		events.PedidoExcluido,
-		"ms-principal",
-		"signature",
+		events.OrderDeleted,
+		events.ProducerPrincipal,
+		privateKey,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)
@@ -165,7 +224,7 @@ func PublishDeleteOrder(channel *amqp.Channel, orderID string) error {
 	if err := rabbitmq.PublishEvent(
 		channel,
 		events.ExchangeEcommerce,
-		events.PedidoExcluido,
+		events.OrderDeleted,
 		envelope,
 	); err != nil {
 		return fmt.Errorf("erro ao enviar evento: %w", err)
@@ -174,17 +233,17 @@ func PublishDeleteOrder(channel *amqp.Channel, orderID string) error {
 	return nil
 }
 
-func SelectOrderToDelete() (string, error) {
+func SelectOrderToHide() (string, error) {
 	fmt.Println("==================================================================")
 	fmt.Println("                         LISTA DE PEDIDOS                       ")
 	fmt.Println("==================================================================")
 
 	var order string
-		fmt.Print("Selecione um pedido para deleção: ")
-		_, err := fmt.Scan(&order)
-		if err != nil {
-			return "", err
-		}
+	fmt.Print("Selecione um pedido para deleção: ")
+	_, err := fmt.Scan(&order)
+	if err != nil {
+		return "", err
+	}
 
 	return order, nil
 }
@@ -325,7 +384,7 @@ func SaveOrders(
 	// Acrescenta uma quebra de linha ao final do arquivo.
 	fileData = append(fileData, '\n')
 
-	if err := os.WriteFile(filePath, fileData, 0644); err != nil {
+	if err := storage.WriteFileSafely(filePath, fileData, 0644); err != nil {
 		return fmt.Errorf(
 			"erro ao gravar arquivo de pedidos %s: %w",
 			filePath,
@@ -340,14 +399,13 @@ func SaveOrders(
 func AddOrder(
 	filePath string,
 	order events.Order,
-	orderID int,
 ) error {
 	if order.OrderID == "" {
 		return fmt.Errorf("pedido sem identificador")
 	}
 
 	if order.Status == "" {
-		order.Status = events.StatusCreated
+		order.Status = events.StatusPending
 	}
 
 	ordersData, err := LoadOrders(filePath)
@@ -404,14 +462,19 @@ func UpdateOrderStatus(
 		if ordersData.Orders[index].OrderID == orderID {
 			currentStatus := ordersData.Orders[index].Status
 
-			if currentStatus == events.StatusCancelled || currentStatus == events.StatusShipped {
-				log.Printf(
-					"[AVISO] Pedido %s já está em estado final (%s), ignorando atualização para %s",
+			if !events.CanTransitionOrderStatus(
+				currentStatus,
+				status,
+			) {
+				return fmt.Errorf(
+					"transição de status inválida para o pedido %s: %s -> %s",
 					orderID,
 					currentStatus,
 					status,
 				)
+			}
 
+			if currentStatus == status {
 				return nil
 			}
 
@@ -430,25 +493,6 @@ func UpdateOrderStatus(
 	}
 
 	return fmt.Errorf("pedido %s não encontrado", orderID)
-}
-
-// ListOrders retorna todos os pedidos armazenados.
-func ListOrders(
-	filePath string,
-) ([]events.Order, error) {
-	ordersData, err := LoadOrders(filePath)
-	if err != nil {
-		return nil, err
-	}
-
-	orders := make(
-		[]events.Order,
-		len(ordersData.Orders),
-	)
-
-	copy(orders, ordersData.Orders)
-
-	return orders, nil
 }
 
 // FindOrder procura um pedido pelo identificador.
@@ -540,11 +584,12 @@ func ShowOrders(orders []events.Order) error {
 
 func HandlePrincipalEvent(
 	envelope events.EventEnvelope,
-	ordersFilePath string,
+	repository *OrderRepository,
 	channel *amqp.Channel,
+	privateKey *rsa.PrivateKey,
 ) error {
 	switch envelope.EventType {
-	case events.PedidoEstoqueOk:
+	case events.OrderStockConfirmed:
 		var payload events.OrderReferencePayload
 
 		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
@@ -554,8 +599,7 @@ func HandlePrincipalEvent(
 			)
 		}
 
-		if err := UpdateOrderStatus(
-			ordersFilePath,
+		if err := repository.UpdateStatus(
 			payload.OrderID,
 			events.StatusStockReserved,
 		); err != nil {
@@ -566,7 +610,7 @@ func HandlePrincipalEvent(
 			)
 		}
 
-	case events.EstoqueIndisponivel:
+	case events.StockUnavailable:
 		var payload events.StockUnavailablePayload
 
 		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
@@ -576,13 +620,12 @@ func HandlePrincipalEvent(
 			)
 		}
 
-		err := PublishDeleteOrder(channel, payload.OrderID)
-			if err != nil {
-				return err
+		err := PublishOrderDeleted(channel, privateKey, payload.OrderID)
+		if err != nil {
+			return err
 		}
 
-		if err := UpdateOrderStatus(
-			ordersFilePath,
+		if err := repository.UpdateStatus(
 			payload.OrderID,
 			events.StatusStockUnavailable,
 		); err != nil {
@@ -593,7 +636,7 @@ func HandlePrincipalEvent(
 			)
 		}
 
-	case events.PagamentoAprovado:
+	case events.PaymentApproved:
 		var payload events.PaymentResultPayload
 
 		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
@@ -603,8 +646,7 @@ func HandlePrincipalEvent(
 			)
 		}
 
-		if err := UpdateOrderStatus(
-			ordersFilePath,
+		if err := repository.UpdateStatus(
 			payload.OrderID,
 			events.StatusPaymentApproved,
 		); err != nil {
@@ -615,7 +657,7 @@ func HandlePrincipalEvent(
 			)
 		}
 
-	case events.PagamentoRecusado:
+	case events.PaymentRefused:
 		var payload events.PaymentResultPayload
 
 		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
@@ -625,13 +667,12 @@ func HandlePrincipalEvent(
 			)
 		}
 
-		err := PublishDeleteOrder(channel, payload.OrderID)
-			if err != nil {
-				return err
+		err := PublishOrderDeleted(channel, privateKey, payload.OrderID)
+		if err != nil {
+			return err
 		}
 
-		if err := UpdateOrderStatus(
-			ordersFilePath,
+		if err := repository.UpdateStatus(
 			payload.OrderID,
 			events.StatusPaymentRefused,
 		); err != nil {
@@ -642,7 +683,7 @@ func HandlePrincipalEvent(
 			)
 		}
 
-	case events.PedidoEnviado:
+	case events.OrderShipped:
 		var payload events.OrderShippedPayload
 
 		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
@@ -652,8 +693,7 @@ func HandlePrincipalEvent(
 			)
 		}
 
-		if err := UpdateOrderStatus(
-			ordersFilePath,
+		if err := repository.UpdateStatus(
 			payload.OrderID,
 			events.StatusShipped,
 		); err != nil {
@@ -672,4 +712,72 @@ func HandlePrincipalEvent(
 	}
 
 	return nil
+}
+
+func MarkOrderAsDeleted(
+	filePath string,
+	orderID string,
+) error {
+	if orderID == "" {
+		return fmt.Errorf(
+			"identificador do pedido não informado",
+		)
+	}
+
+	ordersData, err := LoadOrders(filePath)
+	if err != nil {
+		return err
+	}
+
+	for index := range ordersData.Orders {
+		order := &ordersData.Orders[index]
+
+		if order.OrderID != orderID {
+			continue
+		}
+
+		if order.IsDeleted {
+			return nil
+		}
+
+		order.IsDeleted = true
+
+		if err := SaveOrders(filePath, ordersData); err != nil {
+			return fmt.Errorf(
+				"erro ao excluir logicamente o pedido %s: %w",
+				orderID,
+				err,
+			)
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf(
+		"pedido %s não encontrado",
+		orderID,
+	)
+}
+
+func FilterVisibleOrders(
+	orders []events.Order,
+) []events.Order {
+	visibleOrders := make(
+		[]events.Order,
+		0,
+		len(orders),
+	)
+
+	for _, order := range orders {
+		if order.IsDeleted {
+			continue
+		}
+
+		visibleOrders = append(
+			visibleOrders,
+			order,
+		)
+	}
+
+	return visibleOrders
 }

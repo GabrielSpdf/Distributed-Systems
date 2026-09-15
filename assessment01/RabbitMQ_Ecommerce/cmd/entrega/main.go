@@ -4,37 +4,40 @@ import (
 	"fmt"
 	"log"
 
-	"RabbitMQ_Ecommerce/microservices/ms-entrega"
+	msentrega "RabbitMQ_Ecommerce/microservices/ms-entrega"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
 
 func main() {
 	if err := run(); err != nil {
-		log.Println("[ERRO] Erro ao executar o sistema:", err)
-		log.Fatal(err)
+		log.Fatalf(
+			"[ERRO] Erro ao executar o sistema: %v",
+			err,
+		)
 	}
 }
 
 func run() error {
-	msEntrega, err := msentrega.InitMSEntrega()
+	deliveryService, err := msentrega.InitializeDeliveryService()
 	if err != nil {
 		return err
 	}
 	fmt.Println("[SUCESSO] Microsserviço entrega inicializado com sucesso")
 
-	defer msEntrega.Connection.Close()
-	defer msEntrega.Channel.Close()
+	defer deliveryService.Connection.Close()
+	defer deliveryService.Channel.Close()
 
 	fmt.Println("==================================================================")
 	fmt.Println("                      MICROSSERVIÇO ENTREGA                       ")
 	fmt.Println("==================================================================")
 
-	return rabbitmq.ConsumeEvents(
-		msEntrega.Channel,
-		msEntrega.QueueName,
+	return rabbitmq.ConsumeSignedEvents(
+		deliveryService.Channel,
+		deliveryService.QueueName,
+		deliveryService.PublicKeys,
 		func(envelope events.EventEnvelope) error {
-			return msentrega.HandleDeliveryEvent(envelope, msEntrega.Channel)
+			return msentrega.HandleDeliveryEvent(envelope, deliveryService.Channel, deliveryService.PrivateKey)
 		},
 	)
 }

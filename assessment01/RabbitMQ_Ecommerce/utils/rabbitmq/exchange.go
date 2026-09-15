@@ -53,7 +53,7 @@ func DeclareExchanges(channel *amqp.Channel) error {
 
 	err = DeclareExchange(
 		channel,
-		events.ExchangePromocoes,
+		events.ExchangePromotions,
 		ExchangeTypeTopic,
 	)
 	if err != nil {
