@@ -68,7 +68,7 @@ func run() error {
 		fmt.Println("==================================================================")
 		fmt.Println("1. Visualizar produtos")
 		fmt.Println("2. Realizar pedido")
-		fmt.Println("3. Excluir pedido")
+		fmt.Println("3. Excluir pedido (Remover da visualização)")
 		fmt.Println("4. Consultar pedidos realizados")
 		fmt.Println("5. Sair")
 
@@ -88,6 +88,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
+
+		visibleOrders := msprincipal.FilterVisibleOrders(
+			ordersData.Orders,
+		)
 
 		orderID := ordersData.NextOrderID
 
@@ -212,13 +216,13 @@ func run() error {
 
 		case 3:
 			// Excluir pedido
-			if len(ordersData.Orders) == 0 {
+			if len(visibleOrders) == 0 {
 				fmt.Println("==================================================================")
-				fmt.Println("Nenhum pedido cadastrado para exclusão.")
+				fmt.Println("Nenhum pedido disponível para exclusão.")
 				continue
 			}
 
-			if err := msprincipal.ShowOrders(ordersData.Orders); err != nil {
+			if err := msprincipal.ShowOrders(visibleOrders); err != nil {
 				return err
 			}
 
@@ -227,35 +231,41 @@ func run() error {
 				return err
 			}
 
-			order, err := msprincipal.FindOrder("data/orders.json", orderID)
+			order, err := msprincipal.FindOrder(
+				"data/orders.json",
+				orderID,
+			)
 			if err != nil {
 				fmt.Printf("[ERRO] %s\n", err)
 				continue
 			}
 
-			if order.Status == events.StatusCancelled || order.Status == events.StatusPaymentRefused || order.Status == events.StatusStockUnavailable {
-				fmt.Printf("[ERRO] Pedido %s possui status %s e não pode ser excluído\n", orderID, order.Status)
+			if order.IsDeleted {
+				fmt.Printf(
+					"[ERRO] Pedido %s já foi removido da visualização\n",
+					orderID,
+				)
 				continue
 			}
 
-			err = msprincipal.PublishDeleteOrder(msPrincipal.Channel, msPrincipal.PrivateKey, orderID)
-			if err != nil {
-				return err
-			}
-
-			err = msprincipal.UpdateOrderStatus("data/orders.json", orderID, events.StatusDeleted)
-			if err != nil {
+			if err := msprincipal.MarkOrderAsDeleted(
+				"data/orders.json",
+				orderID,
+			); err != nil {
 				return fmt.Errorf(
-					"erro ao atualizar status do pedido %s: %w",
+					"erro ao excluir logicamente o pedido %s: %w",
 					orderID,
 					err,
 				)
 			}
 
-			fmt.Printf("[SUCESSO] Pedido %s excluído com sucesso\n", orderID)
+			fmt.Printf(
+				"[SUCESSO] Pedido %s removido da visualização\n",
+				orderID,
+			)
 		case 4:
 			// Consultar pedidos realizados
-			if err := msprincipal.ShowOrders(ordersData.Orders); err != nil {
+			if err := msprincipal.ShowOrders(visibleOrders); err != nil {
 				return err
 			}
 

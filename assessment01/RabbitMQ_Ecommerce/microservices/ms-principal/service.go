@@ -720,3 +720,71 @@ func HandlePrincipalEvent(
 
 	return nil
 }
+
+func MarkOrderAsDeleted(
+	filePath string,
+	orderID string,
+) error {
+	if orderID == "" {
+		return fmt.Errorf(
+			"identificador do pedido não informado",
+		)
+	}
+
+	ordersData, err := LoadOrders(filePath)
+	if err != nil {
+		return err
+	}
+
+	for index := range ordersData.Orders {
+		order := &ordersData.Orders[index]
+
+		if order.OrderID != orderID {
+			continue
+		}
+
+		if order.IsDeleted {
+			return nil
+		}
+
+		order.IsDeleted = true
+
+		if err := SaveOrders(filePath, ordersData); err != nil {
+			return fmt.Errorf(
+				"erro ao excluir logicamente o pedido %s: %w",
+				orderID,
+				err,
+			)
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf(
+		"pedido %s não encontrado",
+		orderID,
+	)
+}
+
+func FilterVisibleOrders(
+	orders []events.Order,
+) []events.Order {
+	visibleOrders := make(
+		[]events.Order,
+		0,
+		len(orders),
+	)
+
+	for _, order := range orders {
+		if order.IsDeleted {
+			continue
+		}
+
+		visibleOrders = append(
+			visibleOrders,
+			order,
+		)
+	}
+
+	return visibleOrders
+}

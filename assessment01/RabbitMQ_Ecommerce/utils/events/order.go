@@ -22,6 +22,7 @@ type Order struct {
 	Items      []OrderItem `json:"items"`
 	Total      float64     `json:"total"`
 	Status     OrderStatus `json:"status"`
+	IsDeleted  bool        `json:"is_deleted"`
 }
 
 // Representa um possível estado de processamento de um pedido
