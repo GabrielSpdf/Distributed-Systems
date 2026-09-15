@@ -13,6 +13,7 @@ import (
 	"RabbitMQ_Ecommerce/utils/inventory"
 	"RabbitMQ_Ecommerce/utils/misc"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
+	"RabbitMQ_Ecommerce/utils/storage"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -383,7 +384,7 @@ func SaveOrders(
 	// Acrescenta uma quebra de linha ao final do arquivo.
 	fileData = append(fileData, '\n')
 
-	if err := os.WriteFile(filePath, fileData, 0644); err != nil {
+	if err := storage.WriteFileSafely(filePath, fileData, 0644); err != nil {
 		return fmt.Errorf(
 			"erro ao gravar arquivo de pedidos %s: %w",
 			filePath,

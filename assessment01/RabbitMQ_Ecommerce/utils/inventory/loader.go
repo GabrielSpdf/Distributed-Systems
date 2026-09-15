@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"RabbitMQ_Ecommerce/utils/events"
+	"RabbitMQ_Ecommerce/utils/storage"
 )
 
 type Data struct {
@@ -67,7 +68,9 @@ func SaveStock(
 		)
 	}
 
-	if err := os.WriteFile(filePath, jsonData, 0644); err != nil {
+	jsonData = append(jsonData, '\n')
+
+	if err := storage.WriteFileSafely(filePath, jsonData, 0644); err != nil {
 		return fmt.Errorf(
 			"erro ao atualizar arquivo %s: %w",
 			filePath,
