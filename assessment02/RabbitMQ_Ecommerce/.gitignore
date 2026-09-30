@@ -2,3 +2,7 @@
 **/public.pem
 **/keys
 *.exe
+.env
+.cache/
+frontend/node_modules/
+frontend/dist/

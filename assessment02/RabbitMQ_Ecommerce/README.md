@@ -1,4 +1,34 @@
-# RabbitMQ E-commerce
+# E-commerce Web - REST, RabbitMQ e SSE
+
+Evolução do projeto da Avaliação 01 para uma aplicação web com frontend React,
+API Gateway em Go, PostgreSQL, RabbitMQ, SSE, pagamento via webhook e envio de
+promoções por e-mail.
+
+## Estado atual
+
+- código da Avaliação 01 preservado como base;
+- configuração centralizada por variáveis de ambiente;
+- PostgreSQL e RabbitMQ definidos no Docker Compose;
+- schema inicial do banco criado em `migrations/001_initial.sql`;
+- API Gateway HTTP inicial com `GET /` e `GET /healthz`;
+- frontend React + TypeScript + Vite inicial;
+- próximos passos: persistência Go, autenticação e catálogo REST.
+
+## Configuração inicial
+
+1. Copie `.env.example` para `.env`.
+2. Troque o valor de `JWT_SECRET` por um segredo local longo.
+3. Inicie PostgreSQL e RabbitMQ com `docker compose up -d`.
+4. Execute o Gateway com `go run ./cmd/gateway`.
+5. Em outro terminal, entre em `frontend`, execute `npm install` e depois
+   `npm run dev`.
+6. Abra `http://localhost:5173`.
+
+O endpoint `http://localhost:8080/healthz` deve responder com o estado saudável
+do API Gateway. O painel do RabbitMQ fica disponível em
+`http://localhost:15672`.
+
+## Projeto original
 
 Sistema distribuído de E-Commerce orientado a eventos, desenvolvido em Go e RabbitMQ como atividade acadêmica da disciplina de Sistemas Distribuídos.
 

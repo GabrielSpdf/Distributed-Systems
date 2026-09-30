@@ -3,13 +3,18 @@ package rabbitmq
 import (
 	"fmt"
 
+	"RabbitMQ_Ecommerce/utils/config"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-const rabbitMQURL = "amqp://guest:guest@localhost:5672/"
-
 func Connect() (*amqp.Connection, error) {
-	connection, err := amqp.Dial(rabbitMQURL)
+	return ConnectURL(config.Load().RabbitMQURL)
+}
+
+// ConnectURL opens a RabbitMQ connection using the provided URL.
+func ConnectURL(url string) (*amqp.Connection, error) {
+	connection, err := amqp.Dial(url)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"erro ao conectar ao RabbitMQ: %w",
