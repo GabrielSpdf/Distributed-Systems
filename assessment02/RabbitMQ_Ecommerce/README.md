@@ -14,6 +14,10 @@ promoções por e-mail.
 - frontend React + TypeScript + Vite inicial;
 - próximos passos: persistência Go, autenticação e catálogo REST.
 
+## Guias por etapa
+
+- [Etapa 01 - Infraestrutura local](docs/steps/01-infraestrutura/README.md)
+
 ## Configuração inicial
 
 1. Copie `.env.example` para `.env`.
