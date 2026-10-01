@@ -16,6 +16,7 @@ promoções por e-mail.
 
 ## Guias por etapa
 
+- [Etapa 00 - Divisão de responsabilidades](docs/steps/00-divisao-equipe/README.md)
 - [Etapa 01 - Infraestrutura local](docs/steps/01-infraestrutura/README.md)
 
 ## Configuração inicial
