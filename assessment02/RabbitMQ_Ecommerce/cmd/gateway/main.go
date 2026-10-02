@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 
 	msgateway "RabbitMQ_Ecommerce/microservices/ms-gateway"
 	"RabbitMQ_Ecommerce/utils/config"
+	"RabbitMQ_Ecommerce/utils/database"
 )
 
 func main() {
@@ -22,9 +24,24 @@ func main() {
 
 func run() error {
 	configuration := config.Load()
+
+	databasePool, err := database.Connect(
+		context.Background(),
+		configuration.DatabaseURL,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"erro ao inicializar o PostgreSQL: %w",
+			err,
+		)
+	}
+	defer databasePool.Close()
+
+	log.Println("[SUCESSO] Conexão com o PostgreSQL estabelecida")
+
 	server := &http.Server{
 		Addr:              ":" + configuration.GatewayPort,
-		Handler:           msgateway.NewHandler(configuration.FrontendOrigin),
+		Handler:           msgateway.NewHandler(configuration.FrontendOrigin, databasePool),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
