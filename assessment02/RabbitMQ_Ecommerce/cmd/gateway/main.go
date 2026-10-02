@@ -12,6 +12,7 @@ import (
 	"time"
 
 	msgateway "RabbitMQ_Ecommerce/microservices/ms-gateway"
+	gatewayauth "RabbitMQ_Ecommerce/microservices/ms-gateway/auth"
 	"RabbitMQ_Ecommerce/utils/config"
 	"RabbitMQ_Ecommerce/utils/database"
 )
@@ -37,11 +38,30 @@ func run() error {
 	}
 	defer databasePool.Close()
 
+	tokenManager, err := gatewayauth.NewTokenManager(
+		configuration.JWTSecret,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"erro ao configurar autenticação: %w",
+			err,
+		)
+	}
+
+	userRepository := gatewayauth.NewUserRepository(
+		databasePool,
+	)
+
+	authenticationHandler := gatewayauth.NewHTTPHandler(
+		userRepository,
+		tokenManager,
+	)
+
 	log.Println("[SUCESSO] Conexão com o PostgreSQL estabelecida")
 
 	server := &http.Server{
 		Addr:              ":" + configuration.GatewayPort,
-		Handler:           msgateway.NewHandler(configuration.FrontendOrigin, databasePool),
+		Handler:           msgateway.NewHandler(configuration.FrontendOrigin, databasePool, authenticationHandler.Routes()),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

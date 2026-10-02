@@ -20,6 +20,7 @@ promoções por e-mail.
 - [Etapa 01 - Infraestrutura local](docs/steps/01-infraestrutura/README.md)
 - [Etapa 02 - Contratos de integração](docs/steps/02-contratos/README.md)
 - [Etapa 03 - Integração entre Gateway e PostgreSQL](docs/steps/03-gateway-postgres/README.md)
+- [Etapa 04 - Autenticação e telas de acesso](docs/steps/04-autenticacao/README.md)
 
 ## Configuração inicial
 
