@@ -17,14 +17,18 @@ type response struct {
 }
 
 // NewHandler creates the public HTTP handler for the API Gateway.
-func NewHandler(frontendOrigin string, database DatabasePinger) http.Handler {
+func NewHandler(frontendOrigin string, database DatabasePinger, authenticationRoutes http.Handler) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", serviceInformation)
+	mux.HandleFunc("GET /{$}", serviceInformation)
 	mux.HandleFunc(
 		"GET /healthz",
 		func(writer http.ResponseWriter, request *http.Request) {
 			health(writer, request, database)
 		},
+	)
+	mux.Handle(
+		"/api/auth/",
+		authenticationRoutes,
 	)
 
 	return cors(frontendOrigin, mux)
