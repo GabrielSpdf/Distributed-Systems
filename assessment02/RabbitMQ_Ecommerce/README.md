@@ -12,7 +12,9 @@ promoções por e-mail.
 - schema inicial do banco criado em `migrations/001_initial.sql`;
 - API Gateway HTTP inicial com `GET /` e `GET /healthz`;
 - frontend React + TypeScript + Vite inicial;
-- próximos passos: persistência Go, autenticação e catálogo REST.
+- Gateway conectado ao PostgreSQL e autenticação com telas de acesso;
+- catálogo REST e interface validados com Estoque simulado;
+- próxima integração: catálogo com o MS Estoque real.
 
 ## Guias por etapa
 
@@ -21,6 +23,7 @@ promoções por e-mail.
 - [Etapa 02 - Contratos de integração](docs/steps/02-contratos/README.md)
 - [Etapa 03 - Integração entre Gateway e PostgreSQL](docs/steps/03-gateway-postgres/README.md)
 - [Etapa 04 - Autenticação e telas de acesso](docs/steps/04-autenticacao/README.md)
+- [Etapa 05 - Catálogo no Gateway e React](docs/steps/05-catalogo/README.md)
 
 ## Configuração inicial
 

@@ -10,6 +10,7 @@ import {
   registerUser,
   type User,
 } from './api'
+import Catalog from './Catalog'
 
 const services = [
   { name: 'API Gateway', detail: 'REST, autenticação e SSE' },
@@ -140,12 +141,23 @@ function App() {
           </p>
 
           <div className="actions">
-            <button type="button">Explorar produtos</button>
+            <button
+              type="button"
+              onClick={() =>
+                document.getElementById('catalog')?.scrollIntoView({
+                  behavior: 'smooth',
+                })
+              }
+            >
+              Explorar produtos
+            </button>
             <button className="secondary" type="button">
               Meus pedidos
             </button>
           </div>
         </header>
+
+        <Catalog />
 
         <section aria-labelledby="services-title">
           <div className="section-heading">

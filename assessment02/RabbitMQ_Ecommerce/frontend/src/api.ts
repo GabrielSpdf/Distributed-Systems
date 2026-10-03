@@ -82,3 +82,42 @@ export function getCurrentUser() {
 export function logout() {
   return request<void>('/api/auth/logout', 'POST')
 }
+
+export type Product = {
+  id: string
+  name: string
+  category: string
+  price: number
+  quantity: number
+}
+
+export type ProductsResponse = {
+  products: Product[]
+  total: number
+}
+
+export type ProductFilters = {
+  category?: string
+  available?: boolean
+}
+
+export function getProducts(
+  filters: ProductFilters = {},
+): Promise<ProductsResponse> {
+  const query = new URLSearchParams()
+
+  if (filters.category) {
+    query.set('category', filters.category)
+  }
+
+  if (filters.available !== undefined) {
+    query.set('available', String(filters.available))
+  }
+
+  const queryString = query.toString()
+  const path = queryString
+    ? `/api/products?${queryString}`
+    : '/api/products'
+
+  return request<ProductsResponse>(path, 'GET')
+}
