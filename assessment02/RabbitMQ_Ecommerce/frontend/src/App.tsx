@@ -8,9 +8,14 @@ import {
   login,
   logout,
   registerUser,
+  createOrder,
   type User,
+  type Product,
 } from './api'
+import Orders from './Orders'
 import Catalog from './Catalog'
+import Cart from './Cart'
+import type { CartItem } from './cartTypes'
 
 const services = [
   { name: 'API Gateway', detail: 'REST, autenticação e SSE' },
@@ -31,6 +36,12 @@ function App() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
+  const [cartItems, setCartItems] = useState<CartItem[]>([])
+  const [ordersRefreshKey, setOrdersRefreshKey] = useState(0)
+  const [creatingOrder, setCreatingOrder] = useState(false)
+  const [orderError, setOrderError] = useState('')
+  const [orderMessage, setOrderMessage] = useState('')
+  const [orderMessageVisible, setOrderMessageVisible] = useState(false)
 
   useEffect(() => {
     getCurrentUser()
@@ -39,10 +50,136 @@ function App() {
       .finally(() => setCheckingSession(false))
   }, [])
 
+  useEffect(() => {
+    if (!orderMessage) {
+      setOrderMessageVisible(false)
+      return
+    }
+
+    setOrderMessageVisible(true)
+
+    const fadeTimer = window.setTimeout(() => {
+      setOrderMessageVisible(false)
+    }, 4600)
+
+    const clearTimer = window.setTimeout(() => {
+      setOrderMessage('')
+    }, 5000)
+
+  return () => {
+    window.clearTimeout(fadeTimer)
+    window.clearTimeout(clearTimer)
+  }
+}, [orderMessage])
+
   function changeMode(nextMode: AuthMode) {
     setMode(nextMode)
     setError('')
     setPassword('')
+  }
+
+  function addToCart(product: Product) {
+    if (creatingOrder) {
+      return
+    }
+
+    if (product.quantity <= 0) {
+      return
+    }
+
+    setOrderMessage('')
+    setOrderError('')
+
+    setCartItems((currentItems) => {
+      const existingItem = currentItems.find(
+        (item) => item.product.id === product.id,
+      )
+
+      if (!existingItem) {
+        return [
+          ...currentItems,
+          { product, quantity: 1 },
+        ]
+      }
+
+      if (existingItem.quantity >= product.quantity) {
+        return currentItems
+      }
+
+      return currentItems.map((item) =>
+        item.product.id === product.id
+          ? {
+              product,
+              quantity: item.quantity + 1,
+            }
+          : item,
+      )
+    })
+  }
+
+  function removeFromCart(productID: string) {
+    setCartItems((currentItems) =>
+      currentItems.filter(
+        (item) => item.product.id !== productID,
+      ),
+    )
+  }
+
+  function changeCartQuantity(productID: string, change: number) {
+    setCartItems((currentItems) =>
+      currentItems.map((item) => {
+        if (item.product.id !== productID) {
+          return item
+        }
+
+        const nextQuantity = item.quantity + change
+
+        if (
+          nextQuantity < 1 ||
+          nextQuantity > item.product.quantity
+        ) {
+          return item
+        }
+
+        return {
+          ...item,
+          quantity: nextQuantity,
+        }
+      }),
+    )
+  }
+
+  async function handleCreateOrder() {
+    if (cartItems.length === 0 || creatingOrder) {
+      return
+    }
+
+    setCreatingOrder(true)
+    setOrderError('')
+    setOrderMessage('')
+
+    try {
+      const order = await createOrder({
+        items: cartItems.map((item) => ({
+          product_id: item.product.id,
+          quantity: item.quantity,
+        })),
+      })
+
+      setCartItems([])
+      setOrdersRefreshKey((value) => value + 1)
+      setOrderMessage(
+        `Pedido ${order.id} registrado. Aguardando processamento.`,
+      )
+    } catch (requestError) {
+      setOrderError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Não foi possível criar o pedido',
+      )
+    } finally {
+      setCreatingOrder(false)
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -83,11 +220,14 @@ function App() {
     try {
       await logout()
       setUser(null)
+      setCartItems([])
       setMode('login')
       setName('')
       setEmail('')
       setPassword('')
       setError('')
+      setOrderMessage('')
+      setOrderError('')
     } finally {
       setLoading(false)
     }
@@ -121,7 +261,7 @@ function App() {
               className="secondary compact"
               type="button"
               onClick={handleLogout}
-              disabled={loading}
+              disabled={loading || creatingOrder}
             >
               Sair
             </button>
@@ -151,13 +291,43 @@ function App() {
             >
               Explorar produtos
             </button>
-            <button className="secondary" type="button">
+            <button
+              className="secondary"
+              type="button"
+              onClick={() => {
+                setOrdersRefreshKey((value) => value + 1)
+
+                document.getElementById('orders')?.scrollIntoView({
+                  behavior: 'smooth',
+                })
+              }}
+            >
               Meus pedidos
             </button>
           </div>
         </header>
 
-        <Catalog />
+        <div className="shopping-layout">
+          <Catalog
+            onAddToCart={addToCart}
+            cartItems={cartItems}
+          />
+
+          <aside className="cart-sidebar" aria-label="Resumo do carrinho">
+            <Cart
+              items={cartItems}
+              onRemove={removeFromCart}
+              onQuantityChange={changeCartQuantity}
+              onCreateOrder={handleCreateOrder}
+              creatingOrder={creatingOrder}
+              error={orderError}
+              message={orderMessage}
+              messageVisible={orderMessageVisible}
+            />
+          </aside>
+        </div>
+
+        <Orders refreshKey={ordersRefreshKey} />
 
         <section aria-labelledby="services-title">
           <div className="section-heading">

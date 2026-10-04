@@ -14,6 +14,7 @@ import (
 	msgateway "RabbitMQ_Ecommerce/microservices/ms-gateway"
 	gatewayauth "RabbitMQ_Ecommerce/microservices/ms-gateway/auth"
 	gatewaycatalog "RabbitMQ_Ecommerce/microservices/ms-gateway/catalog"
+	gatewayorders "RabbitMQ_Ecommerce/microservices/ms-gateway/orders"
 	"RabbitMQ_Ecommerce/utils/config"
 	"RabbitMQ_Ecommerce/utils/database"
 )
@@ -66,11 +67,24 @@ func run() error {
 		stockClient,
 	)
 
+	orderRepository := gatewayorders.NewRepository(
+		databasePool,
+	)
+
+	orderHandler := gatewayorders.NewHTTPHandler(
+		orderRepository,
+		stockClient,
+	)
+
+	authenticatedOrderRoutes := authenticationHandler.RequireAuth(
+		orderHandler.Routes(),
+	)
+
 	log.Println("[SUCESSO] Conexão com o PostgreSQL estabelecida")
 
 	server := &http.Server{
 		Addr:              ":" + configuration.GatewayPort,
-		Handler:           msgateway.NewHandler(configuration.FrontendOrigin, databasePool, authenticationHandler.Routes(), catalogHandler.Routes()),
+		Handler:           msgateway.NewHandler(configuration.FrontendOrigin, databasePool, authenticationHandler.Routes(), catalogHandler.Routes(), authenticatedOrderRoutes),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
