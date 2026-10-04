@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react'
 import { getProducts, type Product } from './api'
+import type { CartItem } from './cartTypes'
 
 const currency = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
   currency: 'BRL',
 })
 
-function Catalog() {
+type CatalogProps = {
+  onAddToCart: (product: Product) => void
+  cartItems: CartItem[]
+}
+
+function Catalog({ onAddToCart, cartItems }: CatalogProps) {
   const [products, setProducts] = useState<Product[]>([])
   const [category, setCategory] = useState('')
   const [onlyAvailable, setOnlyAvailable] = useState(false)
@@ -125,20 +131,52 @@ function Catalog() {
           </p>
 
           <div className="product-grid">
-            {filteredProducts.map((product) => (
-              <article className="product-card" key={product.id}>
-                <span className="eyebrow">{product.category}</span>
-                <h3>{product.name}</h3>
-                <strong className="product-price">
-                  {currency.format(product.price)}
-                </strong>
-                <p className="product-stock">
-                  {product.quantity > 0
-                    ? `${product.quantity} unidade(s) disponíveis`
-                    : 'Indisponível'}
-                </p>
-              </article>
-            ))}
+            {filteredProducts.map((product) => {
+              const selectedQuantity = cartItems.find(
+                (item) => item.product.id === product.id,
+              )?.quantity ?? 0
+
+              const remainingQuantity = Math.max(
+                0,
+                product.quantity - selectedQuantity,
+              )
+
+              return (
+                <article className="product-card" key={product.id}>
+                  <span className="eyebrow">{product.category}</span>
+                  <h3>{product.name}</h3>
+
+                  <strong className="product-price">
+                    {currency.format(product.price)}
+                  </strong>
+
+                  <p className="product-stock">
+                    {product.quantity > 0
+                      ? `${product.quantity} unidade(s) em estoque`
+                      : 'Indisponível'}
+                  </p>
+
+                  {selectedQuantity > 0 && (
+                    <p className="product-selection">
+                      {selectedQuantity} no carrinho ·{' '}
+                      {remainingQuantity} para adicionar
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={remainingQuantity === 0}
+                    onClick={() => onAddToCart(product)}
+                  >
+                    {product.quantity <= 0
+                      ? 'Indisponível'
+                      : remainingQuantity === 0
+                        ? 'Limite atingido'
+                        : 'Adicionar ao carrinho'}
+                  </button>
+                </article>
+              )
+            })}
           </div>
         </>
       )}

@@ -24,6 +24,7 @@ promoções por e-mail.
 - [Etapa 03 - Integração entre Gateway e PostgreSQL](docs/steps/03-gateway-postgres/README.md)
 - [Etapa 04 - Autenticação e telas de acesso](docs/steps/04-autenticacao/README.md)
 - [Etapa 05 - Catálogo no Gateway e React](docs/steps/05-catalogo/README.md)
+- [Etapa 06 - Carrinho e pedidos (em andamento)](docs/steps/06-carrinho-pedidos/README.md)
 
 ## Configuração inicial
 

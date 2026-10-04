@@ -121,3 +121,62 @@ export function getProducts(
 
   return request<ProductsResponse>(path, 'GET')
 }
+
+export type CreateOrderInput = {
+  items: {
+    product_id: string
+    quantity: number
+  }[]
+}
+
+export type OrderItem = {
+  product_id: string
+  product_name: string
+  quantity: number
+  unit_price: number
+}
+
+export type OrderLink = {
+  href: string
+  method: string
+}
+
+export type Order = {
+  id: string
+  status: string
+  items: OrderItem[]
+  total: number
+  currency: string
+  checkout_url?: string
+  created_at: string
+  updated_at: string
+  _links: Record<string, OrderLink>
+}
+
+export type OrdersResponse = {
+  orders: Order[]
+  total: number
+}
+
+export function createOrder(
+  input: CreateOrderInput,
+): Promise<Order> {
+  return request<Order>(
+    '/api/orders',
+    'POST',
+    input,
+  )
+}
+
+export function getOrders(): Promise<OrdersResponse> {
+  return request<OrdersResponse>(
+    '/api/orders',
+    'GET',
+  )
+}
+
+export function getOrderDetails(
+  link: OrderLink,
+): Promise<Order> {
+  return request<Order>(link.href, link.method)
+}

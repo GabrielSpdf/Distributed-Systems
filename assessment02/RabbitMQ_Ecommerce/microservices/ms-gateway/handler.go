@@ -17,7 +17,7 @@ type response struct {
 }
 
 // NewHandler creates the public HTTP handler for the API Gateway.
-func NewHandler(frontendOrigin string, database DatabasePinger, authenticationRoutes http.Handler, catalogRoutes http.Handler) http.Handler {
+func NewHandler(frontendOrigin string, database DatabasePinger, authenticationRoutes http.Handler, catalogRoutes http.Handler, orderRoutes http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", serviceInformation)
 	mux.HandleFunc(
@@ -34,6 +34,8 @@ func NewHandler(frontendOrigin string, database DatabasePinger, authenticationRo
 		"/api/products",
 		catalogRoutes,
 	)
+	mux.Handle("/api/orders", orderRoutes)
+	mux.Handle("/api/orders/", orderRoutes)
 
 	return cors(frontendOrigin, mux)
 }
