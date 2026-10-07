@@ -14,6 +14,9 @@ promoções por e-mail.
 - frontend React + TypeScript + Vite inicial;
 - Gateway conectado ao PostgreSQL e autenticação com telas de acesso;
 - catálogo REST e interface validados com Estoque simulado;
+- carrinho e criação, listagem e detalhes de pedidos persistidos no PostgreSQL;
+- publicação assinada de pedido.criado validada em fila de teste no RabbitMQ;
+- falha de publicação registrada no estado e histórico do pedido;
 - próxima integração: catálogo com o MS Estoque real.
 
 ## Guias por etapa
@@ -25,6 +28,7 @@ promoções por e-mail.
 - [Etapa 04 - Autenticação e telas de acesso](docs/steps/04-autenticacao/README.md)
 - [Etapa 05 - Catálogo no Gateway e React](docs/steps/05-catalogo/README.md)
 - [Etapa 06 - Carrinho e pedidos (em andamento)](docs/steps/06-carrinho-pedidos/README.md)
+- [Etapa 07 - Eventos de pedidos (em andamento)](docs/steps/07-eventos-pedidos/README.md)
 
 ## Configuração inicial
 

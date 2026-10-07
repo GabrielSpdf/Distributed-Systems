@@ -168,9 +168,15 @@ function App() {
 
       setCartItems([])
       setOrdersRefreshKey((value) => value + 1)
-      setOrderMessage(
-        `Pedido ${order.id} registrado. Aguardando processamento.`,
-      )
+      if (order.status === 'FALHA_NO_PROCESSAMENTO') {
+        setOrderMessage(
+          `Pedido ${order.id} registrado, mas houve uma falha no envio para processamento. Consulte Meus pedidos.`,
+        )
+      } else {
+        setOrderMessage(
+          `Pedido ${order.id} registrado. Acompanhe a situação em Meus pedidos.`,
+        )
+      }
     } catch (requestError) {
       setOrderError(
         requestError instanceof Error

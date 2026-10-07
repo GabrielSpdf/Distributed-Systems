@@ -3,7 +3,6 @@ package misc
 import (
 	"crypto/rand"
 	"crypto/rsa"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -35,8 +34,21 @@ func BuildEnvelope(
 		)
 	}
 
+	// Define a versão 4 e a variante do UUID.
+	eventIDBytes[6] = (eventIDBytes[6] & 0x0f) | 0x40
+	eventIDBytes[8] = (eventIDBytes[8] & 0x3f) | 0x80
+
+	eventID := fmt.Sprintf(
+		"%x-%x-%x-%x-%x",
+		eventIDBytes[0:4],
+		eventIDBytes[4:6],
+		eventIDBytes[6:8],
+		eventIDBytes[8:10],
+		eventIDBytes[10:16],
+	)
+
 	return events.EventEnvelope{
-		EventID:   hex.EncodeToString(eventIDBytes[:]),
+		EventID:   eventID,
 		EventType: eventType,
 		Producer:  producer,
 		Timestamp: time.Now().UTC(),
