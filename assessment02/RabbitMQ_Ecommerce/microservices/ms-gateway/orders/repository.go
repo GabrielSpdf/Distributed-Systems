@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -323,4 +324,60 @@ func (repository *Repository) FindByID(
 	order.UpdatedAt = order.UpdatedAt.UTC()
 
 	return order, nil
+}
+
+func (repository *Repository) MarkProcessingFailed(
+	ctx context.Context,
+	orderID string,
+) (time.Time, error) {
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("erro ao iniciar transação: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var updatedAt time.Time
+
+	err = tx.QueryRow(
+		ctx,
+		`
+			UPDATE gateway.orders
+			SET status = $2, updated_at = NOW()
+			WHERE id = $1
+			  AND status = $3
+			  AND is_deleted = FALSE
+			RETURNING updated_at
+		`,
+		orderID,
+		StatusProcessingFailed,
+		StatusPending,
+	).Scan(&updatedAt)
+	if err != nil {
+		return time.Time{}, fmt.Errorf(
+			"erro ao registrar falha no pedido pendente: %w",
+			err,
+		)
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		`
+			INSERT INTO gateway.order_status_history (
+				order_id, status, created_at
+			)
+			VALUES ($1, $2, $3)
+		`,
+		orderID,
+		StatusProcessingFailed,
+		updatedAt,
+	)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("erro ao salvar histórico: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return time.Time{}, fmt.Errorf("erro ao confirmar falha: %w", err)
+	}
+
+	return updatedAt.UTC(), nil
 }

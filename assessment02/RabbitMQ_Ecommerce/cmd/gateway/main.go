@@ -16,7 +16,10 @@ import (
 	gatewaycatalog "RabbitMQ_Ecommerce/microservices/ms-gateway/catalog"
 	gatewayorders "RabbitMQ_Ecommerce/microservices/ms-gateway/orders"
 	"RabbitMQ_Ecommerce/utils/config"
+	"RabbitMQ_Ecommerce/utils/cryptography"
 	"RabbitMQ_Ecommerce/utils/database"
+	"RabbitMQ_Ecommerce/utils/events"
+	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
 
 func main() {
@@ -39,6 +42,42 @@ func run() error {
 		)
 	}
 	defer databasePool.Close()
+
+	rabbitConnection, err := rabbitmq.ConnectURL(
+		configuration.RabbitMQURL,
+	)
+	if err != nil {
+		return fmt.Errorf("erro ao inicializar RabbitMQ: %w", err)
+	}
+	defer rabbitConnection.Close()
+
+	publisherChannel, err := rabbitmq.OpenChannel(rabbitConnection)
+	if err != nil {
+		return err
+	}
+	defer publisherChannel.Close()
+
+	if err := rabbitmq.DeclareExchange(
+		publisherChannel,
+		events.ExchangeEcommerce,
+		rabbitmq.ExchangeTypeDirect,
+	); err != nil {
+		return err
+	}
+
+	log.Println("[SUCESSO] Conexão com o RabbitMQ estabelecida")
+
+	privateKey, err := cryptography.LoadPrivateKey(
+		"keys/ms-principal/private.pem",
+	)
+	if err != nil {
+		return fmt.Errorf("erro ao carregar chave do Principal: %w", err)
+	}
+
+	orderPublisher := gatewayorders.NewEventPublisher(
+		publisherChannel,
+		privateKey,
+	)
 
 	tokenManager, err := gatewayauth.NewTokenManager(
 		configuration.JWTSecret,
@@ -74,6 +113,7 @@ func run() error {
 	orderHandler := gatewayorders.NewHTTPHandler(
 		orderRepository,
 		stockClient,
+		orderPublisher,
 	)
 
 	authenticatedOrderRoutes := authenticationHandler.RequireAuth(

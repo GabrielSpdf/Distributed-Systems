@@ -1,11 +1,13 @@
 package orders
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"RabbitMQ_Ecommerce/microservices/ms-gateway/auth"
 	"RabbitMQ_Ecommerce/microservices/ms-gateway/catalog"
@@ -14,15 +16,18 @@ import (
 type HTTPHandler struct {
 	repository *Repository
 	stock      *catalog.StockClient
+	publisher  *EventPublisher
 }
 
 func NewHTTPHandler(
 	repository *Repository,
 	stock *catalog.StockClient,
+	publisher *EventPublisher,
 ) *HTTPHandler {
 	return &HTTPHandler{
 		repository: repository,
 		stock:      stock,
+		publisher:  publisher,
 	}
 }
 
@@ -109,6 +114,15 @@ func (handler *HTTPHandler) create(
 		return
 	}
 
+	if handler.publisher == nil {
+		writeError(
+			writer,
+			http.StatusServiceUnavailable,
+			"publicador de pedidos não configurado",
+		)
+		return
+	}
+
 	order, err := handler.repository.Create(
 		request.Context(),
 		userID,
@@ -124,6 +138,40 @@ func (handler *HTTPHandler) create(
 			"não foi possível salvar o pedido",
 		)
 		return
+	}
+
+	if err := handler.publisher.PublishCreated(order); err != nil {
+		log.Printf(
+			"[ERRO] Publicação de pedido.criado para %s: %v",
+			order.ID,
+			err,
+		)
+
+		failureContext, cancel := context.WithTimeout(
+			context.Background(),
+			5*time.Second,
+		)
+		defer cancel()
+
+		updatedAt, failureErr := handler.repository.MarkProcessingFailed(
+			failureContext,
+			order.DatabaseID,
+		)
+		if failureErr != nil {
+			log.Printf(
+				"[ERRO] Registro da falha no pedido %s: %v",
+				order.ID,
+				failureErr,
+			)
+		} else {
+			order.Status = StatusProcessingFailed
+			order.UpdatedAt = updatedAt
+		}
+	} else {
+		log.Printf(
+			"[INFO] Publicação de pedido.criado executada para %s",
+			order.ID,
+		)
 	}
 
 	addOrderLinks(&order)
