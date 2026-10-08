@@ -1,0 +1,10 @@
+BEGIN;
+
+ALTER TABLE gateway.orders
+    ADD COLUMN IF NOT EXISTS charge_id TEXT,
+    ADD COLUMN IF NOT EXISTS checkout_expires_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS invoice_id TEXT,
+    ADD COLUMN IF NOT EXISTS tracking_code TEXT,
+    ADD COLUMN IF NOT EXISTS shipped_at TIMESTAMPTZ;
+
+COMMIT;

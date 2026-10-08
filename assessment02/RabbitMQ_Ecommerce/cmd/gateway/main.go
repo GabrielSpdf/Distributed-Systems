@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -65,6 +66,32 @@ func run() error {
 		return err
 	}
 
+	statusChannel, err := rabbitmq.OpenChannel(rabbitConnection)
+	if err != nil {
+		return err
+	}
+	defer statusChannel.Close()
+
+	if err := gatewayorders.PrepareStatusQueue(statusChannel); err != nil {
+		return fmt.Errorf("erro ao preparar fila de status: %w", err)
+	}
+
+	statusPublicKeys, err := cryptography.LoadPublicKeyRegistry(
+		map[string]string{
+			events.ProducerStock:    "keys/ms-estoque/public.pem",
+			events.ProducerPayment:  "keys/ms-pagamento/public.pem",
+			events.ProducerDelivery: "keys/ms-entrega/public.pem",
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("erro ao carregar chaves dos produtores: %w", err)
+	}
+
+	log.Printf(
+		"[SUCESSO] Fila de status preparada; %d chaves públicas carregadas",
+		len(statusPublicKeys),
+	)
+
 	log.Println("[SUCESSO] Conexão com o RabbitMQ estabelecida")
 
 	privateKey, err := cryptography.LoadPrivateKey(
@@ -109,6 +136,30 @@ func run() error {
 	orderRepository := gatewayorders.NewRepository(
 		databasePool,
 	)
+
+	statusContext, cancelStatus := context.WithCancel(context.Background())
+	var statusWorkers sync.WaitGroup
+
+	statusWorkers.Add(2)
+
+	go func() {
+		defer statusWorkers.Done()
+		orderRepository.RunStatusConsumer(
+			statusContext,
+			configuration.RabbitMQURL,
+			statusPublicKeys,
+		)
+	}()
+
+	go func() {
+		defer statusWorkers.Done()
+		orderRepository.RunStatusProcessor(statusContext)
+	}()
+
+	defer func() {
+		cancelStatus()
+		statusWorkers.Wait()
+	}()
 
 	orderHandler := gatewayorders.NewHTTPHandler(
 		orderRepository,

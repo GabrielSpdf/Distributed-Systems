@@ -29,6 +29,7 @@ promoções por e-mail.
 - [Etapa 05 - Catálogo no Gateway e React](docs/steps/05-catalogo/README.md)
 - [Etapa 06 - Carrinho e pedidos (em andamento)](docs/steps/06-carrinho-pedidos/README.md)
 - [Etapa 07 - Eventos de pedidos (em andamento)](docs/steps/07-eventos-pedidos/README.md)
+- [Etapa 08 - Consumo de eventos e status dos pedidos (em andamento)](docs/steps/08-status-pedidos/README.md)
 
 ## Configuração inicial
 

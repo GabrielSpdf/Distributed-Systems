@@ -8,13 +8,14 @@ const (
 
 // Define as constantes para os eventos obrigatórios que serão publicados/consumidos pela Exchange eCommerce (Tipo Direct)
 const (
-	OrderCreated        = "pedido.criado"
-	OrderStockConfirmed = "pedido.estoque_ok"
-	OrderDeleted        = "pedido.excluido"
-	OrderShipped        = "pedido.enviado"
-	StockUnavailable    = "estoque.indisponivel"
-	PaymentApproved     = "pagamento.aprovado"
-	PaymentRefused      = "pagamento.recusado"
+	OrderCreated             = "pedido.criado"
+	OrderStockConfirmed      = "pedido.estoque_ok"
+	OrderDeleted             = "pedido.excluido"
+	OrderShipped             = "pedido.enviado"
+	StockUnavailable         = "estoque.indisponivel"
+	PaymentApproved          = "pagamento.aprovado"
+	PaymentRefused           = "pagamento.recusado"
+	PaymentCheckoutAvailable = "pagamento.checkout_disponivel"
 )
 
 // Define as constantes para os eventos obrigatórios que serão publicados/consumidos pela Exchange Promoções (Tipo Topic)
