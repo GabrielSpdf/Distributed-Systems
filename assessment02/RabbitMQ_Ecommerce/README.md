@@ -17,7 +17,14 @@ promoções por e-mail.
 - carrinho e criação, listagem e detalhes de pedidos persistidos no PostgreSQL;
 - publicação assinada de pedido.criado validada em fila de teste no RabbitMQ;
 - falha de publicação registrada no estado e histórico do pedido;
-- próxima integração: catálogo com o MS Estoque real.
+- consumo assinado, inbox e atualização de status integrados pelo PR #19;
+- cancelamento autenticado com link condicional e confirmação na interface,
+  em desenvolvimento na branch feat/order-cancellation;
+- outbox de compensação com assinatura preservada, confirmação do RabbitMQ,
+  recuperação após indisponibilidade e limite de tentativas validados;
+- integração com Estoque/Pagamento/Entrega reais pendente das implementações
+  de Gabriel; testes atuais usam mocks e filas de captura;
+- próxima etapa da interface: atualizações automáticas por SSE.
 
 ## Guias por etapa
 
@@ -30,6 +37,7 @@ promoções por e-mail.
 - [Etapa 06 - Carrinho e pedidos (em andamento)](docs/steps/06-carrinho-pedidos/README.md)
 - [Etapa 07 - Eventos de pedidos (em andamento)](docs/steps/07-eventos-pedidos/README.md)
 - [Etapa 08 - Consumo de eventos e status dos pedidos (em andamento)](docs/steps/08-status-pedidos/README.md)
+- [Etapa 09 - Cancelamento e compensação (em andamento)](docs/steps/09-cancelamento-compensacao/README.md)
 
 ## Configuração inicial
 

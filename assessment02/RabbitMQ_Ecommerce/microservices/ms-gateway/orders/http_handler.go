@@ -36,6 +36,7 @@ func (handler *HTTPHandler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/orders", handler.create)
 	mux.HandleFunc("GET /api/orders", handler.list)
 	mux.HandleFunc("GET /api/orders/{orderId}", handler.details)
+	mux.HandleFunc("DELETE /api/orders/{orderId}", handler.cancel)
 
 	return mux
 }
@@ -272,12 +273,62 @@ func (handler *HTTPHandler) details(
 	writeJSON(writer, http.StatusOK, order)
 }
 
+func (handler *HTTPHandler) cancel(
+	writer http.ResponseWriter,
+	request *http.Request,
+) {
+	userID, authenticated := auth.UserIDFromContext(request.Context())
+	if !authenticated {
+		writeError(writer, http.StatusUnauthorized, "usuário não autenticado")
+		return
+	}
+
+	_, err := handler.repository.Cancel(
+		request.Context(),
+		userID,
+		request.PathValue("orderId"),
+	)
+
+	if errors.Is(err, ErrOrderNotFound) {
+		writeError(writer, http.StatusNotFound, "pedido não encontrado")
+		return
+	}
+	if errors.Is(err, ErrCancellationConflict) {
+		writeError(
+			writer,
+			http.StatusConflict,
+			"pedido não pode ser cancelado no estado atual",
+		)
+		return
+	}
+	if err != nil {
+		log.Printf("[ERRO] Cancelamento do pedido: %v", err)
+		writeError(
+			writer,
+			http.StatusInternalServerError,
+			"não foi possível cancelar o pedido",
+		)
+		return
+	}
+
+	// A compensação foi salva na outbox; a publicação é assíncrona.
+	writer.WriteHeader(http.StatusNoContent)
+}
+
 func addOrderLinks(order *Order) {
 	order.Links = map[string]Link{
 		"self": {
 			Href:   "/api/orders/" + order.ID,
 			Method: http.MethodGet,
 		},
+	}
+
+	if order.Status == StatusPending ||
+		order.Status == StatusStockConfirmed {
+		order.Links["cancel"] = Link{
+			Href:   "/api/orders/" + order.ID,
+			Method: http.MethodDelete,
+		}
 	}
 }
 

@@ -180,3 +180,7 @@ export function getOrderDetails(
 ): Promise<Order> {
   return request<Order>(link.href, link.method)
 }
+
+export function cancelOrder(link: OrderLink): Promise<void> {
+  return request<void>(link.href, 'DELETE')
+}
