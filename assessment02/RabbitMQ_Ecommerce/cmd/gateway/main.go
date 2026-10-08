@@ -140,7 +140,7 @@ func run() error {
 	statusContext, cancelStatus := context.WithCancel(context.Background())
 	var statusWorkers sync.WaitGroup
 
-	statusWorkers.Add(2)
+	statusWorkers.Add(3)
 
 	go func() {
 		defer statusWorkers.Done()
@@ -154,6 +154,15 @@ func run() error {
 	go func() {
 		defer statusWorkers.Done()
 		orderRepository.RunStatusProcessor(statusContext)
+	}()
+
+	go func() {
+		defer statusWorkers.Done()
+		orderRepository.RunOutboxPublisher(
+			statusContext,
+			configuration.RabbitMQURL,
+			privateKey,
+		)
 	}()
 
 	defer func() {

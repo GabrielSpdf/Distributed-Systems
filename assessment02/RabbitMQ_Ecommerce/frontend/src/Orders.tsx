@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { getOrders, type Order, getOrderDetails } from './api'
+import { useEffect, useRef, useState } from 'react'
+import { getOrders, type Order, getOrderDetails, cancelOrder } from './api'
 
 type OrdersProps = {
   refreshKey: number
@@ -36,6 +36,26 @@ function Orders({ refreshKey }: OrdersProps) {
   const [loadingDetails, setLoadingDetails] = useState(false)
   const [detailsError, setDetailsError] = useState('')
   const [detailsOrderID, setDetailsOrderID] = useState<string | null>(null)
+  const [cancelingOrderID, setCancelingOrderID] = useState<string | null>(null)
+  const [confirmationOrder, setConfirmationOrder] = useState<Order | null>(null)
+  const confirmationDialog = useRef<HTMLDialogElement>(null)
+  const cancellationInFlight = useRef(false)
+  const [cancelFeedback, setCancelFeedback] = useState<{
+    orderID: string
+    message: string
+    isError: boolean
+  } | null>(null)
+
+  useEffect(() => {
+    const dialog = confirmationDialog.current
+    if (!dialog) return
+
+    if (confirmationOrder && !dialog.open) {
+      dialog.showModal()
+    } else if (!confirmationOrder && dialog.open) {
+      dialog.close()
+    }
+  }, [confirmationOrder])
 
   useEffect(() => {
     let active = true
@@ -95,6 +115,45 @@ function Orders({ refreshKey }: OrdersProps) {
     }
   }
 
+  async function handleCancelOrder(order: Order) {
+    const link = order._links.cancel
+
+    if (!link || link.method !== 'DELETE' || cancellationInFlight.current || loadingDetails) {
+      return
+    }
+
+    cancellationInFlight.current = true
+    setCancelingOrderID(order.id)
+    setCancelFeedback(null)
+
+    try {
+      await cancelOrder(link)
+
+      setSelectedOrder((current) =>
+        current?.id === order.id ? null : current,
+      )
+
+      setCancelFeedback({
+        orderID: order.id,
+        message: 'Pedido cancelado. A liberação do estoque será processada.',
+        isError: false,
+      })
+    } catch (requestError) {
+      setCancelFeedback({
+        orderID: order.id,
+        message:
+          requestError instanceof Error
+            ? requestError.message
+            : 'Não foi possível cancelar o pedido',
+        isError: true,
+      })
+    } finally {
+      cancellationInFlight.current = false
+      setCancelingOrderID(null)
+      setReload((value) => value + 1)
+    }
+  }
+
   return (
     <section
       id="orders"
@@ -110,7 +169,7 @@ function Orders({ refreshKey }: OrdersProps) {
         <button
           className="secondary compact"
           type="button"
-          disabled={loading}
+          disabled={loading || cancelingOrderID !== null}
           onClick={() => setReload((value) => value + 1)}
         >
           Atualizar
@@ -164,19 +223,45 @@ function Orders({ refreshKey }: OrdersProps) {
                 <span>Total</span>
                 <strong>{currency.format(order.total)}</strong>
               </div>
-              {order._links.self && selectedOrder?.id !== order.id && (
-                <button
-                  className="secondary compact order-details-button"
-                  type="button"
-                  disabled={loadingDetails}
-                  onClick={() => showDetails(order)}
-                >
-                  Ver detalhes
-                </button>
-              )}
+              <div className="order-actions">
+                {order._links.self && selectedOrder?.id !== order.id && (
+                  <button
+                    className="secondary compact"
+                    type="button"
+                    disabled={loadingDetails || cancelingOrderID !== null}
+                    onClick={() => showDetails(order)}
+                  >
+                    Ver detalhes
+                  </button>
+                )}
+                {order._links.cancel?.method === 'DELETE' && (
+                  <button
+                    className="secondary compact"
+                    type="button"
+                    disabled={cancelingOrderID !== null || loadingDetails}
+                    onClick={() => setConfirmationOrder(order)}
+                  >
+                    {cancelingOrderID === order.id ? 'Cancelando...' : 'Cancelar pedido'}
+                  </button>
+                )}
+              </div>
+
               {detailsOrderID === order.id && loadingDetails && (
                 <p className="cart-feedback" role="status">
                   Consultando detalhes...
+                </p>
+              )}
+
+              {cancelFeedback?.orderID === order.id && (
+                <p
+                  className={
+                    cancelFeedback.isError
+                      ? 'form-error cart-feedback'
+                      : 'cart-feedback'
+                  }
+                  role={cancelFeedback.isError ? 'alert' : 'status'}
+                >
+                  {cancelFeedback.message}
                 </p>
               )}
 
@@ -217,6 +302,45 @@ function Orders({ refreshKey }: OrdersProps) {
           ))}
         </div>
       )}
+      <dialog
+        ref={confirmationDialog}
+        className="order-cancel-dialog"
+        aria-labelledby="cancel-order-title"
+        aria-describedby="cancel-order-description"
+        onCancel={() => setConfirmationOrder(null)}
+      >
+        <span className="eyebrow">Cancelar pedido</span>
+        <h2 id="cancel-order-title">
+          Deseja cancelar o pedido {confirmationOrder?.id}?
+        </h2>
+        <p id="cancel-order-description">
+          O pedido continuará no seu histórico. Se houver estoque reservado,
+          sua liberação será solicitada.
+        </p>
+        <div className="order-cancel-actions">
+          <button
+            className="secondary"
+            type="button"
+            autoFocus
+            onClick={() => setConfirmationOrder(null)}
+          >
+            Voltar
+          </button>
+          <button
+            className="danger"
+            type="button"
+            disabled={!confirmationOrder || cancelingOrderID !== null}
+            onClick={() => {
+              if (!confirmationOrder) return
+              const order = confirmationOrder
+              setConfirmationOrder(null)
+              void handleCancelOrder(order)
+            }}
+          >
+            Confirmar cancelamento
+          </button>
+        </div>
+      </dialog>
     </section>
   )
 }

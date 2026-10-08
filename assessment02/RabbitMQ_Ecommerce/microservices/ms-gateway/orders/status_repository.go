@@ -193,6 +193,23 @@ func (repository *Repository) applyStatusEventTx(
 		return false, fmt.Errorf("erro ao registrar histórico: %w", err)
 	}
 
+	if event.EventType == events.PaymentRefused {
+		err := repository.enqueueOrderDeletedTx(
+			ctx,
+			tx,
+			databaseID,
+			events.WebOrderDeletedPayload{
+				OrderID:     event.OrderID,
+				CustomerID:  userID,
+				Reason:      events.ReasonPaymentRefused,
+				CancelledAt: updatedAt.UTC(),
+			},
+		)
+		if err != nil {
+			return false, err
+		}
+	}
+
 	return true, nil
 }
 

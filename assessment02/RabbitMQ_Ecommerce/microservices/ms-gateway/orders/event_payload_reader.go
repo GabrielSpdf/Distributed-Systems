@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"RabbitMQ_Ecommerce/utils/events"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func ReadStockConfirmedPayload(
@@ -221,4 +222,34 @@ func ReadOrderShippedPayload(
 	}
 
 	return payload, nil
+}
+
+func ValidateOrderDeletedPayload(
+	payload events.WebOrderDeletedPayload,
+) error {
+	if strings.TrimSpace(payload.OrderID) == "" ||
+		len(payload.OrderID) > 32 {
+		return fmt.Errorf("identificador do pedido inválido")
+	}
+
+	var customerID pgtype.UUID
+	if err := customerID.Scan(payload.CustomerID); err != nil ||
+		!customerID.Valid {
+		return fmt.Errorf("identificador do cliente deve ser UUID válido")
+	}
+
+	switch payload.Reason {
+	case events.ReasonCustomerCancelled,
+		events.ReasonPaymentRefused,
+		events.ReasonCheckoutExpired,
+		events.ReasonInternalFailure:
+	default:
+		return fmt.Errorf("motivo de cancelamento inválido")
+	}
+
+	if payload.CancelledAt.IsZero() {
+		return fmt.Errorf("data de cancelamento é obrigatória")
+	}
+
+	return nil
 }

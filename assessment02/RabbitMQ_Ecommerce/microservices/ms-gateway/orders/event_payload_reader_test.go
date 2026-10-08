@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
+
+	"RabbitMQ_Ecommerce/utils/events"
 )
 
 const validStockConfirmedJSON = `{
@@ -69,6 +72,73 @@ func TestReadStockConfirmedPayloadRejectsInvalidData(t *testing.T) {
 			)
 			if err == nil {
 				t.Fatal("payload inválido deveria ser rejeitado")
+			}
+		})
+	}
+}
+
+func TestValidateOrderDeletedPayload(t *testing.T) {
+	for _, reason := range []string{
+		events.ReasonCustomerCancelled,
+		events.ReasonPaymentRefused,
+		events.ReasonCheckoutExpired,
+		events.ReasonInternalFailure,
+	} {
+		t.Run(reason, func(t *testing.T) {
+			payload := events.WebOrderDeletedPayload{
+				OrderID:     "PED-001",
+				CustomerID:  "c537d2d6-f125-4119-965e-3854562c8729",
+				Reason:      reason,
+				CancelledAt: time.Now().UTC(),
+			}
+			if err := ValidateOrderDeletedPayload(payload); err != nil {
+				t.Fatalf("erro inesperado: %v", err)
+			}
+		})
+	}
+
+	tests := []struct {
+		name   string
+		change func(*events.WebOrderDeletedPayload)
+	}{
+		{"pedido vazio", func(p *events.WebOrderDeletedPayload) {
+			p.OrderID = ""
+		}},
+		{"pedido em branco", func(p *events.WebOrderDeletedPayload) {
+			p.OrderID = "   "
+		}},
+		{"pedido muito longo", func(p *events.WebOrderDeletedPayload) {
+			p.OrderID = strings.Repeat("X", 33)
+		}},
+		{"cliente vazio", func(p *events.WebOrderDeletedPayload) {
+			p.CustomerID = ""
+		}},
+		{"cliente inválido", func(p *events.WebOrderDeletedPayload) {
+			p.CustomerID = "cliente-teste"
+		}},
+		{"motivo vazio", func(p *events.WebOrderDeletedPayload) {
+			p.Reason = ""
+		}},
+		{"motivo desconhecido", func(p *events.WebOrderDeletedPayload) {
+			p.Reason = "OUTRO"
+		}},
+		{"data ausente", func(p *events.WebOrderDeletedPayload) {
+			p.CancelledAt = time.Time{}
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := events.WebOrderDeletedPayload{
+				OrderID:     "PED-001",
+				CustomerID:  "c537d2d6-f125-4119-965e-3854562c8729",
+				Reason:      events.ReasonCustomerCancelled,
+				CancelledAt: time.Now().UTC(),
+			}
+			tt.change(&payload)
+
+			if err := ValidateOrderDeletedPayload(payload); err == nil {
+				t.Fatal("esperava rejeição do payload inválido")
 			}
 		})
 	}
