@@ -154,6 +154,19 @@ func TestApplyStatusEventIntegration(t *testing.T) {
 
 	checkState(StatusPending, 1)
 
+	statusSSE, unsubscribeStatusSSE := repository.sseHub.subscribe(userID)
+	defer unsubscribeStatusSSE()
+
+	assertNoStatusSSE := func() {
+		t.Helper()
+
+		select {
+		case event := <-statusSSE:
+			t.Fatalf("aviso SSE inesperado: %+v", event)
+		default:
+		}
+	}
+
 	wrongCustomer := payload
 	wrongCustomer.CustomerID = "cliente-de-outro-pedido"
 	applied, err := apply("teste-cliente-incorreto", wrongCustomer)
@@ -161,6 +174,8 @@ func TestApplyStatusEventIntegration(t *testing.T) {
 		t.Fatalf("cliente incorreto: aplicado=%v, erro=%v", applied, err)
 	}
 	checkState(StatusPending, 1)
+
+	assertNoStatusSSE()
 
 	wrongTotal := payload
 	wrongTotal.Total = 9.9
@@ -176,11 +191,41 @@ func TestApplyStatusEventIntegration(t *testing.T) {
 	}
 	checkState(StatusStockConfirmed, 2)
 
+	select {
+	case event, open := <-statusSSE:
+		if !open {
+			t.Fatal("conexão SSE encerrada inesperadamente")
+		}
+		if event.Name != "order.status.changed" ||
+			event.ID != "teste-estoque-confirmado" {
+			t.Fatalf("evento SSE incorreto: %+v", event)
+		}
+
+		var notification struct {
+			OrderID string `json:"orderId"`
+			Status  string `json:"status"`
+		}
+		if err := json.Unmarshal(event.Data, &notification); err != nil {
+			t.Fatal(err)
+		}
+		if notification.OrderID != order.ID ||
+			notification.Status != StatusStockConfirmed {
+			t.Fatalf("dados SSE incorretos: %+v", notification)
+		}
+
+		checkState(StatusStockConfirmed, 2)
+
+	default:
+		t.Fatal("confirmação do estoque não gerou aviso SSE")
+	}
+
 	applied, err = apply("teste-estoque-confirmado", payload)
 	if err != nil || applied {
 		t.Fatalf("evento repetido: aplicado=%v, erro=%v", applied, err)
 	}
 	checkState(StatusStockConfirmed, 2)
+	assertNoStatusSSE()
+	unsubscribeStatusSSE()
 
 	var eventCount int
 	err = pool.QueryRow(ctx, `
@@ -631,6 +676,49 @@ func TestApplyStatusEventIntegration(t *testing.T) {
 		}
 	}
 
+	inboxSSE, unsubscribeInboxSSE := repository.sseHub.subscribe(userID)
+	defer unsubscribeInboxSSE()
+
+	assertNoInboxSSE := func() {
+		t.Helper()
+
+		select {
+		case event := <-inboxSSE:
+			t.Fatalf("aviso inesperado da inbox: %+v", event)
+		default:
+		}
+	}
+
+	assertInboxSSE := func(expectedID, expectedStatus string) {
+		t.Helper()
+
+		select {
+		case event, open := <-inboxSSE:
+			if !open {
+				t.Fatal("conexão SSE da inbox foi encerrada")
+			}
+			if event.Name != "order.status.changed" ||
+				event.ID != expectedID {
+				t.Fatalf("evento da inbox incorreto: %+v", event)
+			}
+
+			var notification struct {
+				OrderID string `json:"orderId"`
+				Status  string `json:"status"`
+			}
+			if err := json.Unmarshal(event.Data, &notification); err != nil {
+				t.Fatal(err)
+			}
+			if notification.OrderID != order.ID ||
+				notification.Status != expectedStatus {
+				t.Fatalf("dados da inbox incorretos: %+v", notification)
+			}
+
+		default:
+			t.Fatal("processamento da inbox não gerou aviso SSE")
+		}
+	}
+
 	checkout.OrderID = order.ID
 	checkoutEventID := "checkout-antecipado-" + order.ID
 	storeForProcessing(
@@ -642,6 +730,8 @@ func TestApplyStatusEventIntegration(t *testing.T) {
 	processNext()
 	checkInbox(checkoutEventID, "RECEBIDO", 1)
 	checkState(StatusPending, 1)
+
+	assertNoInboxSSE()
 
 	payload.OrderID = order.ID
 	stockEventID := "estoque-inbox-" + order.ID
@@ -655,6 +745,9 @@ func TestApplyStatusEventIntegration(t *testing.T) {
 	checkInbox(stockEventID, "PROCESSADO", 1)
 	checkState(StatusStockConfirmed, 2)
 
+	assertInboxSSE(stockEventID, StatusStockConfirmed)
+	assertNoInboxSSE()
+
 	// Antecipa apenas o evento deste teste para evitar espera.
 	_, err = pool.Exec(ctx, `
 		UPDATE gateway.event_inbox
@@ -667,6 +760,39 @@ func TestApplyStatusEventIntegration(t *testing.T) {
 	processNext()
 	checkInbox(checkoutEventID, "PROCESSADO", 2)
 	checkState(StatusAwaitingPayment, 3)
+
+	assertInboxSSE(checkoutEventID, StatusAwaitingPayment)
+
+	select {
+	case event, open := <-inboxSSE:
+		if !open {
+			t.Fatal("conexão encerrada antes do aviso de checkout")
+		}
+		if event.Name != "payment.checkout.available" ||
+			event.ID != checkoutEventID {
+			t.Fatalf("aviso de checkout incorreto: %+v", event)
+		}
+
+		var notification struct {
+			OrderID     string    `json:"orderId"`
+			CheckoutURL string    `json:"checkoutUrl"`
+			ExpiresAt   time.Time `json:"expiresAt"`
+		}
+		if err := json.Unmarshal(event.Data, &notification); err != nil {
+			t.Fatal(err)
+		}
+		if notification.OrderID != order.ID ||
+			notification.CheckoutURL != checkout.CheckoutURL ||
+			!notification.ExpiresAt.Equal(checkout.ExpiresAt) {
+			t.Fatalf("dados de checkout incorretos: %+v", notification)
+		}
+
+	default:
+		t.Fatal("checkout não gerou seu aviso específico")
+	}
+
+	assertNoInboxSSE()
+	unsubscribeInboxSSE()
 
 	// O pedido atual já possui checkout: cancelamento deve ser conflito.
 	cancelled, err := repository.Cancel(ctx, userID, order.ID)
@@ -712,6 +838,9 @@ func TestApplyStatusEventIntegration(t *testing.T) {
 			historyBefore = 2
 		}
 
+		sseChannel, unsubscribeSSE := repository.sseHub.subscribe(userID)
+		defer unsubscribeSSE()
+
 		cancelled, err = repository.Cancel(
 			ctx,
 			"00000000-0000-0000-0000-000000000001",
@@ -722,17 +851,59 @@ func TestApplyStatusEventIntegration(t *testing.T) {
 		}
 		checkState(initialStatus, historyBefore)
 
+		select {
+		case <-sseChannel:
+			t.Fatal("cancelamento por outro cliente gerou aviso SSE")
+		default:
+		}
+
 		cancelled, err = repository.Cancel(ctx, userID, order.ID)
 		if err != nil || !cancelled {
 			t.Fatalf("cancelamento permitido: cancelado=%v, erro=%v", cancelled, err)
 		}
 		checkState(StatusCancelled, historyBefore+1)
 
+		select {
+		case event, open := <-sseChannel:
+			if !open {
+				t.Fatal("conexão SSE foi encerrada inesperadamente")
+			}
+			if event.Name != "order.status.changed" || event.ID != "" {
+				t.Fatalf("aviso de cancelamento incorreto: %+v", event)
+			}
+
+			var notification struct {
+				OrderID string `json:"orderId"`
+				Status  string `json:"status"`
+			}
+			if err := json.Unmarshal(event.Data, &notification); err != nil {
+				t.Fatal(err)
+			}
+			if notification.OrderID != order.ID ||
+				notification.Status != StatusCancelled {
+				t.Fatalf("dados do aviso incorretos: %+v", notification)
+			}
+
+			// Confere o estado persistido usando outra consulta ao banco.
+			checkState(StatusCancelled, historyBefore+1)
+
+		default:
+			t.Fatal("cancelamento não gerou aviso SSE")
+		}
+
 		cancelled, err = repository.Cancel(ctx, userID, order.ID)
 		if err != nil || cancelled {
 			t.Fatalf("cancelamento repetido: cancelado=%v, erro=%v", cancelled, err)
 		}
 		checkState(StatusCancelled, historyBefore+1)
+
+		select {
+		case <-sseChannel:
+			t.Fatal("cancelamento repetido gerou outro aviso SSE")
+		default:
+		}
+
+		unsubscribeSSE()
 
 		var outboxCount int
 		err = pool.QueryRow(ctx, `

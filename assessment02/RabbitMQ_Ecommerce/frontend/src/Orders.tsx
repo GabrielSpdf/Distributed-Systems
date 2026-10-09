@@ -45,6 +45,10 @@ function Orders({ refreshKey }: OrdersProps) {
     message: string
     isError: boolean
   } | null>(null)
+  const [streamState, setStreamState] = useState<
+    'connecting' | 'connected' | 'reconnecting'
+  >('connecting')
+  const [statusNotification, setStatusNotification] = useState('')
 
   useEffect(() => {
     const dialog = confirmationDialog.current
@@ -60,13 +64,26 @@ function Orders({ refreshKey }: OrdersProps) {
   useEffect(() => {
     let active = true
 
-    setLoading(true)
     setError('')
 
     getOrders()
       .then((result) => {
         if (active) {
           setOrders(result.orders)
+
+          setSelectedOrder((current) =>
+            current
+              ? result.orders.find((order) => order.id === current.id) ?? null
+              : null,
+          )
+
+          setConfirmationOrder((current) => {
+            if (!current) return null
+
+            const updated = result.orders.find((order) => order.id === current.id)
+
+            return updated?._links.cancel?.method === 'DELETE' ? updated : null
+          })
         }
       })
       .catch((requestError: unknown) => {
@@ -88,6 +105,116 @@ function Orders({ refreshKey }: OrdersProps) {
       active = false
     }
   }, [refreshKey, reload])
+
+  useEffect(() => {
+    let source = new EventSource('/api/orders/events', {
+      withCredentials: true,
+    })
+
+    let lastSignalAt = Date.now()
+
+    const onHeartbeat = () => {
+      lastSignalAt = Date.now()
+    }
+
+    let refreshTimer: number | undefined
+
+    const scheduleRefresh = () => {
+      if (refreshTimer !== undefined) return
+
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = undefined
+        setReload((value) => value + 1)
+      }, 100)
+    }
+
+
+    const onReady = () => {
+      lastSignalAt = Date.now()
+      setStreamState('connected')
+      scheduleRefresh()
+    }
+
+    const onStatusChanged = (event: MessageEvent<string>) => {
+      try {
+        const data: unknown = JSON.parse(event.data)
+
+        if (!data || typeof data !== 'object') return
+        if (!('orderId' in data) || typeof data.orderId !== 'string') return
+        if (!('status' in data) || typeof data.status !== 'string') return
+        if (!Object.hasOwn(statusLabels, data.status)) return
+
+        setStatusNotification(
+          `Pedido ${data.orderId}: ${statusLabels[data.status]}.`,
+        )
+        scheduleRefresh()
+      } catch {
+        // Ignora notificações que não seguem o formato esperado.
+      }
+    }
+
+    const onCheckoutAvailable = (event: MessageEvent<string>) => {
+      try {
+        const data: unknown = JSON.parse(event.data)
+
+        if (!data || typeof data !== 'object') return
+        if (!('orderId' in data) || typeof data.orderId !== 'string') return
+
+        // O link será obtido da API, não aberto diretamente pelo aviso.
+        scheduleRefresh()
+      } catch {
+        // Ignora notificações inválidas.
+      }
+    }
+
+    const onError = () => {
+      setStreamState('reconnecting')
+    }
+
+    const attachListeners = () => {
+      source.addEventListener('connection.ready', onReady)
+      source.addEventListener('connection.heartbeat', onHeartbeat)
+      source.addEventListener('order.status.changed', onStatusChanged)
+      source.addEventListener('payment.checkout.available', onCheckoutAvailable)
+      source.addEventListener('error', onError)
+    }
+
+    attachListeners()
+
+    const connectionTimer = window.setInterval(() => {
+      if (Date.now() - lastSignalAt < 45000) return
+
+      setStreamState('reconnecting')
+      source.close()
+
+      lastSignalAt = Date.now()
+      source = new EventSource('/api/orders/events', {
+        withCredentials: true,
+      })
+      attachListeners()
+    }, 5000)
+
+    return () => {
+      source.close()
+
+      window.clearInterval(connectionTimer)
+
+      if (refreshTimer !== undefined) {
+        window.clearTimeout(refreshTimer)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!statusNotification) return
+
+    const timer = window.setTimeout(() => {
+      setStatusNotification('')
+    }, 8000)
+
+    return () => window.clearTimeout(timer)
+  }, [statusNotification])
+
 
   async function showDetails(order: Order) {
     const link = order._links.self
@@ -175,6 +302,20 @@ function Orders({ refreshKey }: OrdersProps) {
           Atualizar
         </button>
       </div>
+
+      <p className="cart-feedback" role="status">
+        {streamState === 'connected'
+          ? 'Atualizações em tempo real conectadas.'
+          : streamState === 'connecting'
+            ? 'Conectando às atualizações em tempo real...'
+            : 'Reconectando às atualizações. Você pode usar o botão Atualizar.'}
+      </p>
+
+      {statusNotification && (
+        <div className="order-notification" role="status">
+          {statusNotification}
+        </div>
+      )}
 
       {loading ? (
         <div className="catalog-state" role="status">

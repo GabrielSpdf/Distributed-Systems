@@ -95,6 +95,13 @@ func (repository *Repository) Cancel(
 		return false, fmt.Errorf("erro ao confirmar cancelamento: %w", err)
 	}
 
+	repository.notifyOrderStatus(
+		userID,
+		displayID,
+		StatusCancelled,
+		"",
+	)
+
 	return true, nil
 }
 

@@ -342,6 +342,10 @@ func (repository *Repository) ApplyStatusEvent(
 		return false, fmt.Errorf("erro ao confirmar atualização: %w", err)
 	}
 
+	if applied {
+		repository.notifyAppliedStatusEvent(eventID, eventType, data)
+	}
+
 	return applied, nil
 }
 
@@ -379,6 +383,7 @@ func (repository *Repository) ProcessNextStatusEvent(
 	}
 
 	var envelope events.EventEnvelope
+	var applied bool
 	processErr := json.Unmarshal(envelopeData, &envelope)
 	if processErr != nil {
 		processErr = fmt.Errorf(
@@ -398,7 +403,7 @@ func (repository *Repository) ProcessNextStatusEvent(
 			return false, fmt.Errorf("erro ao criar savepoint: %w", err)
 		}
 
-		_, processErr = repository.applyStatusEventTx(
+		applied, processErr = repository.applyStatusEventTx(
 			ctx,
 			attemptTx,
 			envelope.EventID,
@@ -468,6 +473,14 @@ func (repository *Repository) ProcessNextStatusEvent(
 
 	if err := tx.Commit(ctx); err != nil {
 		return false, fmt.Errorf("erro ao confirmar processamento: %w", err)
+	}
+
+	if applied && processErr == nil {
+		repository.notifyAppliedStatusEvent(
+			envelope.EventID,
+			envelope.EventType,
+			envelope.Payload,
+		)
 	}
 
 	return true, nil

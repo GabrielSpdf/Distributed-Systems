@@ -37,6 +37,7 @@ func (handler *HTTPHandler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/orders", handler.list)
 	mux.HandleFunc("GET /api/orders/{orderId}", handler.details)
 	mux.HandleFunc("DELETE /api/orders/{orderId}", handler.cancel)
+	mux.HandleFunc("GET /api/orders/events", handler.streamEvents)
 
 	return mux
 }
