@@ -19,12 +19,13 @@ promoções por e-mail.
 - falha de publicação registrada no estado e histórico do pedido;
 - consumo assinado, inbox e atualização de status integrados pelo PR #19;
 - cancelamento autenticado com link condicional e confirmação na interface,
-  em desenvolvimento na branch feat/order-cancellation;
+  integrado pelo PR #20;
 - outbox de compensação com assinatura preservada, confirmação do RabbitMQ,
   recuperação após indisponibilidade e limite de tentativas validados;
 - integração com Estoque/Pagamento/Entrega reais pendente das implementações
   de Gabriel; testes atuais usam mocks e filas de captura;
-- próxima etapa da interface: atualizações automáticas por SSE.
+- SSE autenticado para status e checkout, atualização automática da interface,
+  notificações e reconexão validados na branch feat/order-sse (PR pendente).
 
 ## Guias por etapa
 
@@ -38,11 +39,14 @@ promoções por e-mail.
 - [Etapa 07 - Eventos de pedidos (em andamento)](docs/steps/07-eventos-pedidos/README.md)
 - [Etapa 08 - Consumo de eventos e status dos pedidos (em andamento)](docs/steps/08-status-pedidos/README.md)
 - [Etapa 09 - Cancelamento e compensação (em andamento)](docs/steps/09-cancelamento-compensacao/README.md)
+- [Etapa 10 - Atualização de pedidos por SSE (em andamento)](docs/steps/10-sse-pedidos/README.md)
 
 ## Configuração inicial
 
 1. Copie `.env.example` para `.env`.
-2. Troque o valor de `JWT_SECRET` por um segredo local longo.
+2. Configure `JWT_SECRET` no ambiente do terminal com pelo menos 32 bytes.
+   O Gateway não carrega `.env` automaticamente. Preserve o mesmo segredo ao
+   reiniciar para manter as sessões existentes válidas.
 3. Inicie PostgreSQL e RabbitMQ com `docker compose up -d`.
 4. Execute o Gateway com `go run ./cmd/gateway`.
 5. Em outro terminal, entre em `frontend`, execute `npm install` e depois

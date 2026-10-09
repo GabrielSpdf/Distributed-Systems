@@ -6,3 +6,13 @@
 .cache/
 frontend/node_modules/
 frontend/dist/
+.vite/
+frontend/.vite/
+
+# Cache de compilação do TypeScript
+*.tsbuildinfo
+
+# Arquivos gerados pelos testes Go
+*.test
+coverage.out
+coverage.html

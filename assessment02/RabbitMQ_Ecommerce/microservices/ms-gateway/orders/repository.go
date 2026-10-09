@@ -13,12 +13,14 @@ import (
 var ErrOrderNotFound = errors.New("pedido não encontrado")
 
 type Repository struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	sseHub *orderSSEHub
 }
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{
-		pool: pool,
+		pool:   pool,
+		sseHub: newOrderSSEHub(),
 	}
 }
 
