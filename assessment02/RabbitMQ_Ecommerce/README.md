@@ -25,7 +25,11 @@ promoções por e-mail.
 - integração com Estoque/Pagamento/Entrega reais pendente das implementações
   de Gabriel; testes atuais usam mocks e filas de captura;
 - SSE autenticado para status e checkout, atualização automática da interface,
-  notificações e reconexão validados na branch feat/order-sse (PR pendente).
+  notificações e reconexão integrados pelo PR #21;
+- link condicional de checkout, abertura em nova aba e indicação de expiração
+  validados com evento assinado simulado na branch feat/order-checkout;
+- tela de pagamento, processamento real e cancelamento automático por expiração
+  ainda não integrados.
 
 ## Guias por etapa
 
@@ -40,6 +44,7 @@ promoções por e-mail.
 - [Etapa 08 - Consumo de eventos e status dos pedidos (em andamento)](docs/steps/08-status-pedidos/README.md)
 - [Etapa 09 - Cancelamento e compensação (em andamento)](docs/steps/09-cancelamento-compensacao/README.md)
 - [Etapa 10 - Atualização de pedidos por SSE (em andamento)](docs/steps/10-sse-pedidos/README.md)
+- [Etapa 11 - Link de checkout dos pedidos](docs/steps/11-checkout-pedidos/README.md)
 
 ## Configuração inicial
 
