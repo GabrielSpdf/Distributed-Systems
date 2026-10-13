@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"time"
 
 	"RabbitMQ_Ecommerce/microservices/ms-gateway/auth"
@@ -329,6 +330,23 @@ func addOrderLinks(order *Order) {
 		order.Links["cancel"] = Link{
 			Href:   "/api/orders/" + order.ID,
 			Method: http.MethodDelete,
+		}
+	}
+
+	if order.Status == StatusAwaitingPayment &&
+		order.CheckoutExpiresAt != nil &&
+		order.CheckoutExpiresAt.After(time.Now()) {
+
+		checkoutURL, err := url.Parse(order.CheckoutURL)
+		if err == nil &&
+			(checkoutURL.Scheme == "http" || checkoutURL.Scheme == "https") &&
+			checkoutURL.Hostname() != "" &&
+			checkoutURL.User == nil {
+
+			order.Links["checkout"] = Link{
+				Href:   order.CheckoutURL,
+				Method: http.MethodGet,
+			}
 		}
 	}
 }

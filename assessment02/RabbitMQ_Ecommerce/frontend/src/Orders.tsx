@@ -27,6 +27,33 @@ const statusLabels: Record<string, string> = {
   FALHA_NO_PROCESSAMENTO: 'Falha no processamento',
 }
 
+function canOpenCheckout(order: Order, now: number): boolean {
+  const link = order._links.checkout
+  const expiresAt = Date.parse(order.checkout_expires_at ?? '')
+
+  if (
+    order.status !== 'AGUARDANDO_PAGAMENTO' ||
+    link?.method !== 'GET' ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= now
+  ) {
+    return false
+  }
+
+  try {
+    const url = new URL(link.href)
+
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      url.hostname !== '' &&
+      url.username === '' &&
+      url.password === ''
+    )
+  } catch {
+    return false
+  }
+}
+
 function Orders({ refreshKey }: OrdersProps) {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,6 +76,15 @@ function Orders({ refreshKey }: OrdersProps) {
     'connecting' | 'connected' | 'reconnecting'
   >('connecting')
   const [statusNotification, setStatusNotification] = useState('')
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+      const timer = window.setInterval(() => {
+        setNow(Date.now())
+      }, 1000)
+
+      return () => window.clearInterval(timer)
+    }, [])
 
   useEffect(() => {
     const dialog = confirmationDialog.current
@@ -127,7 +163,6 @@ function Orders({ refreshKey }: OrdersProps) {
         setReload((value) => value + 1)
       }, 100)
     }
-
 
     const onReady = () => {
       lastSignalAt = Date.now()
@@ -375,6 +410,23 @@ function Orders({ refreshKey }: OrdersProps) {
                     Ver detalhes
                   </button>
                 )}
+                {canOpenCheckout(order, now) && (
+                  <a
+                    className="order-checkout-link"
+                    href={order._links.checkout.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => {
+                      if (!canOpenCheckout(order, Date.now())) {
+                        event.preventDefault()
+                        setNow(Date.now())
+                      }
+                    }}
+                  >
+                    Ir para pagamento
+                    <span className="checkout-new-tab"></span>
+                  </a>
+                )}
                 {order._links.cancel?.method === 'DELETE' && (
                   <button
                     className="secondary compact"
@@ -386,6 +438,17 @@ function Orders({ refreshKey }: OrdersProps) {
                   </button>
                 )}
               </div>
+
+              {order.status === 'AGUARDANDO_PAGAMENTO' &&
+              Number.isFinite(Date.parse(order.checkout_expires_at ?? '')) && (
+                <p className="cart-feedback">
+                  {Date.parse(order.checkout_expires_at!) <= now
+                    ? 'Checkout expirado. O link de pagamento não está mais disponível.'
+                    : `Pagamento disponível até ${dateFormat.format(
+                        new Date(order.checkout_expires_at!),
+                      )}.`}
+                </p>
+              )}
 
               {detailsOrderID === order.id && loadingDetails && (
                 <p className="cart-feedback" role="status">

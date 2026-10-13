@@ -148,6 +148,7 @@ export type Order = {
   total: number
   currency: string
   checkout_url?: string
+  checkout_expires_at?: string
   created_at: string
   updated_at: string
   _links: Record<string, OrderLink>

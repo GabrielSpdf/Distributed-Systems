@@ -30,6 +30,10 @@ func run() error {
 	total := flag.Float64("total", 0, "Total do pedido")
 	repeat := flag.Int("repeat", 1, "Quantidade de envios do mesmo envelope")
 	tamper := flag.Bool("tamper", false, "Adulterar payload após assinatura")
+	checkout := flag.Bool("checkout", false, "Enviar checkout disponível")
+	checkoutURL := flag.String("checkout-url", "", "URL do checkout")
+	chargeID := flag.String("charge", "", "Identificador da cobrança")
+	validFor := flag.Duration("valid-for", 2*time.Minute, "Validade do checkout")
 	flag.Parse()
 
 	if strings.TrimSpace(*orderID) == "" ||
@@ -39,23 +43,51 @@ func run() error {
 		return fmt.Errorf("informe pedido, cliente, total positivo e repeat entre 1 e 10")
 	}
 
-	privateKey, err := cryptography.LoadPrivateKey(
-		"keys/ms-estoque/private.pem",
-	)
+	eventType := events.OrderStockConfirmed
+	producer := events.ProducerStock
+	keyPath := "keys/ms-estoque/private.pem"
+
+	var payload any = events.WebStockConfirmedPayload{
+		OrderID:    *orderID,
+		CustomerID: *customerID,
+		Total:      *total,
+		Currency:   "BRL",
+		ReservedAt: time.Now().UTC(),
+	}
+
+	if *checkout {
+		if strings.TrimSpace(*checkoutURL) == "" ||
+			strings.TrimSpace(*chargeID) == "" ||
+			*validFor <= 0 {
+			return fmt.Errorf("informe checkout-url, charge e valid-for positivo")
+		}
+
+		if *tamper {
+			return fmt.Errorf("tamper está disponível apenas para o evento de estoque")
+		}
+
+		eventType = events.PaymentCheckoutAvailable
+		producer = events.ProducerPayment
+		keyPath = "keys/ms-pagamento/private.pem"
+
+		payload = events.WebPaymentCheckoutPayload{
+			OrderID:     *orderID,
+			CustomerID:  *customerID,
+			ChargeID:    *chargeID,
+			CheckoutURL: *checkoutURL,
+			ExpiresAt:   time.Now().UTC().Add(*validFor),
+		}
+	}
+
+	privateKey, err := cryptography.LoadPrivateKey(keyPath)
 	if err != nil {
 		return err
 	}
 
 	envelope, err := misc.BuildSignedEnvelope(
-		events.WebStockConfirmedPayload{
-			OrderID:    *orderID,
-			CustomerID: *customerID,
-			Total:      *total,
-			Currency:   "BRL",
-			ReservedAt: time.Now().UTC(),
-		},
-		events.OrderStockConfirmed,
-		events.ProducerStock,
+		payload,
+		eventType,
+		producer,
 		privateKey,
 	)
 	if err != nil {
@@ -103,7 +135,7 @@ func run() error {
 		if err := rabbitmq.PublishEvent(
 			channel,
 			events.ExchangeEcommerce,
-			events.OrderStockConfirmed,
+			eventType,
 			envelope,
 		); err != nil {
 			return err

@@ -1089,3 +1089,30 @@ article p {
     font-size: 0.95rem;
   }
 }
+
+.order-checkout-link {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.65rem 1.15rem;
+  border-radius: 999px;
+  background: var(--green);
+  color: var(--white);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.order-checkout-link:hover {
+  background: var(--green-dark);
+}
+
+.order-checkout-link:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 3px;
+}
+
+.checkout-new-tab {
+  font-size: 0.85em;
+  font-weight: 400;
+}

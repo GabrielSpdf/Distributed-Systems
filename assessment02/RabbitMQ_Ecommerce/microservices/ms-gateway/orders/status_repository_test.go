@@ -298,6 +298,40 @@ func TestApplyStatusEventIntegration(t *testing.T) {
 		t.Fatal("dados do checkout não foram persistidos corretamente")
 	}
 
+	checkoutDetails, err := repository.FindByID(ctx, userID, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if checkoutDetails.CheckoutURL != checkout.CheckoutURL ||
+		checkoutDetails.CheckoutExpiresAt == nil ||
+		!checkoutDetails.CheckoutExpiresAt.Equal(checkout.ExpiresAt) {
+		t.Fatal("detalhes não retornaram os dados do checkout")
+	}
+
+	checkoutOrders, err := repository.ListByUser(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checkoutFound := false
+	for _, listedOrder := range checkoutOrders {
+		if listedOrder.ID != order.ID {
+			continue
+		}
+
+		checkoutFound = true
+		if listedOrder.CheckoutURL != checkout.CheckoutURL ||
+			listedOrder.CheckoutExpiresAt == nil ||
+			!listedOrder.CheckoutExpiresAt.Equal(checkout.ExpiresAt) {
+			t.Fatal("listagem não retornou os dados do checkout")
+		}
+	}
+
+	if !checkoutFound {
+		t.Fatal("pedido com checkout não encontrado na listagem")
+	}
+
 	wrongCharge := payment
 	wrongCharge.ChargeID = "COB-OUTRA"
 	applied, err = applyPayload(

@@ -36,15 +36,16 @@ type Link struct {
 }
 
 type Order struct {
-	DatabaseID  string          `json:"-"`
-	UserID      string          `json:"-"`
-	ID          string          `json:"id"`
-	Status      string          `json:"status"`
-	Items       []OrderItem     `json:"items"`
-	Total       float64         `json:"total"`
-	Currency    string          `json:"currency"`
-	CheckoutURL string          `json:"checkout_url,omitempty"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
-	Links       map[string]Link `json:"_links"`
+	DatabaseID        string          `json:"-"`
+	UserID            string          `json:"-"`
+	ID                string          `json:"id"`
+	Status            string          `json:"status"`
+	Items             []OrderItem     `json:"items"`
+	Total             float64         `json:"total"`
+	Currency          string          `json:"currency"`
+	CheckoutURL       string          `json:"checkout_url,omitempty"`
+	CheckoutExpiresAt *time.Time      `json:"checkout_expires_at,omitempty"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
+	Links             map[string]Link `json:"_links"`
 }
