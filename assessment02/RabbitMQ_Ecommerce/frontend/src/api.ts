@@ -185,3 +185,38 @@ export function getOrderDetails(
 export function cancelOrder(link: OrderLink): Promise<void> {
   return request<void>(link.href, 'DELETE')
 }
+
+export type PromotionCategory =
+  | 'alimentos'
+  | 'limpeza'
+  | 'eletronicos'
+
+export type PromotionInterestsResponse = {
+  categories: PromotionCategory[]
+}
+
+export function getPromotionInterests(): Promise<PromotionInterestsResponse> {
+  return request<PromotionInterestsResponse>(
+    '/api/promotion-interests',
+    'GET',
+  )
+}
+
+export function subscribePromotionInterests(
+  categories: PromotionCategory[],
+): Promise<{ changed: boolean }> {
+  return request<{ changed: boolean }>(
+    '/api/promotion-interests',
+    'POST',
+    { categories },
+  )
+}
+
+export function unsubscribePromotionInterest(
+  category: PromotionCategory,
+): Promise<void> {
+  return request<void>(
+    `/api/promotion-interests/${encodeURIComponent(category)}`,
+    'DELETE',
+  )
+}

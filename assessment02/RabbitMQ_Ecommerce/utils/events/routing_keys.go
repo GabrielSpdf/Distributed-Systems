@@ -16,6 +16,7 @@ const (
 	PaymentApproved          = "pagamento.aprovado"
 	PaymentRefused           = "pagamento.recusado"
 	PaymentCheckoutAvailable = "pagamento.checkout_disponivel"
+	PromotionInterest        = "interesse.promocao"
 )
 
 // Define as constantes para os eventos obrigatórios que serão publicados/consumidos pela Exchange Promoções (Tipo Topic)
