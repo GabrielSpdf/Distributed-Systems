@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -21,6 +22,27 @@ var services = []string{
 }
 
 func main() {
+	promotionsOnly := flag.Bool(
+		"promotions-only",
+		false,
+		"Gerar somente as chaves de Promoções, sem substituir existentes",
+	)
+	flag.Parse()
+
+	if *promotionsOnly {
+		directory := filepath.Join(
+			keysDirectory,
+			events.ProducerPromotions,
+		)
+
+		if err := cryptography.GenerateKeyPair(directory); err != nil {
+			log.Fatal("[ERRO] ", err)
+		}
+
+		fmt.Println("[SUCESSO] Chaves de Promoções criadas")
+		return
+	}
+
 	if err := run(); err != nil {
 		log.Fatal("[ERRO] ", err)
 	}

@@ -16,6 +16,7 @@ import (
 	gatewayauth "RabbitMQ_Ecommerce/microservices/ms-gateway/auth"
 	gatewaycatalog "RabbitMQ_Ecommerce/microservices/ms-gateway/catalog"
 	gatewayorders "RabbitMQ_Ecommerce/microservices/ms-gateway/orders"
+	gatewaypromotions "RabbitMQ_Ecommerce/microservices/ms-gateway/promotions"
 	"RabbitMQ_Ecommerce/utils/config"
 	"RabbitMQ_Ecommerce/utils/cryptography"
 	"RabbitMQ_Ecommerce/utils/database"
@@ -64,6 +65,10 @@ func run() error {
 		rabbitmq.ExchangeTypeDirect,
 	); err != nil {
 		return err
+	}
+
+	if err := rabbitmq.PreparePromotionInterestQueue(publisherChannel); err != nil {
+		return fmt.Errorf("erro ao preparar fila de interesses: %w", err)
 	}
 
 	statusChannel, err := rabbitmq.OpenChannel(rabbitConnection)
@@ -180,15 +185,40 @@ func run() error {
 		orderHandler.Routes(),
 	)
 
+	promotionRepository := gatewaypromotions.NewRepository(databasePool)
+
+	statusWorkers.Add(1)
+
+	go func() {
+		defer statusWorkers.Done()
+		promotionRepository.RunOutboxPublisher(
+			statusContext,
+			configuration.RabbitMQURL,
+			privateKey,
+		)
+	}()
+
+	promotionHandler := gatewaypromotions.NewHTTPHandler(promotionRepository)
+
+	authenticatedPromotionRoutes := authenticationHandler.RequireAuth(
+		promotionHandler.Routes(),
+	)
+
 	log.Println("[SUCESSO] Conexão com o PostgreSQL estabelecida")
 
 	server := &http.Server{
-		Addr:              ":" + configuration.GatewayPort,
-		Handler:           msgateway.NewHandler(configuration.FrontendOrigin, databasePool, authenticationHandler.Routes(), catalogHandler.Routes(), authenticatedOrderRoutes),
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		Addr: ":" + configuration.GatewayPort,
+		Handler: msgateway.NewHandler(
+			configuration.FrontendOrigin,
+			databasePool,
+			authenticationHandler.Routes(),
+			catalogHandler.Routes(),
+			authenticatedOrderRoutes,
+			authenticatedPromotionRoutes,
+		), ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	serverErrors := make(chan error, 1)

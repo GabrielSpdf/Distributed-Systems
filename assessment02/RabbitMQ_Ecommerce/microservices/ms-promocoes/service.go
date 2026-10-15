@@ -6,6 +6,7 @@ import (
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -53,7 +54,9 @@ func GeneratePromotion(products []events.Product) events.PromotionPayload {
 
 	// rand.Float64() gera um numero entre 0 e 1 incluso
 	discount := 5 + rand.Float64()*25 // (5% - 30%)
-	promotionalPrice := product.Price * (1 - discount/100)
+	promotionalPrice := math.Round(
+		product.Price*(1-discount/100)*100,
+	) / 100
 
 	return events.PromotionPayload{
 		ProductID:          product.ID,

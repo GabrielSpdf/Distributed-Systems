@@ -9,6 +9,10 @@ var expectedProducerByEventType = map[string]string{
 	PaymentRefused:           ProducerPayment,
 	OrderShipped:             ProducerDelivery,
 	PaymentCheckoutAvailable: ProducerPayment,
+	PromotionInterest:        ProducerPrincipal,
+	PromotionCategoryA:       ProducerPromotions,
+	PromotionCategoryB:       ProducerPromotions,
+	PromotionCategoryC:       ProducerPromotions,
 }
 
 // ExpectedProducerFor returns the producer authorized to publish an event type.
