@@ -1,12 +1,16 @@
-# Etapa 13 - MS Pagamento e Mock de Pagamento
+# Etapa 14 - MS Pagamento e Mock de Pagamento
 
 ## Base e escopo
 
-Branch `feat/payment-webhook`, criada sobre `feat/estoque-postgres` (Etapa 12),
-pois usa o Estoque real e a configuração daquela etapa. Gabriel substitui o
-Pagamento aleatório da Avaliação 01 pelo fluxo da Avaliação 02: cobrança no
-Mock de Pagamento, checkout em nova aba e retorno por webhook assinado com
-HMAC. A tela de checkout que o React abre é a página do Mock.
+Branch `feat/estoque-pagamento`, junto com o MS Estoque (Etapa 13), pois usa
+o Estoque real e a configuração daquela etapa. Gabriel substitui o Pagamento
+aleatório da Avaliação 01 pelo fluxo da Avaliação 02: cobrança no Mock de
+Pagamento, checkout em nova aba e retorno por webhook assinado com HMAC. A
+tela de checkout que o React abre é a página do Mock.
+
+Implementado e validado com o Gateway antes da revisão de escopo registrada
+na Etapa 00 (14/10/2026), que indica Lucas como responsável por Pagamento e
+Mock de Pagamento. A dupla deve decidir quem mantém esta parte.
 
 ## Fluxo e implementação
 
@@ -29,7 +33,7 @@ Pagamento --pagamento.aprovado / pagamento.recusado--> Gateway (e Entrega)
 | `ms-pagamento/webhook_handler.go` | `POST /webhooks/payments` e `GET /healthz` |
 | `ms-pagamento/repository.go` | Cobranças e eventos de webhook no schema `pagamento` |
 | `utils/webhook/signature.go` | Assinatura e validação HMAC-SHA256 |
-| `migrations/008_payment_charges.sql` | Colunas novas em `pagamento.payment_charges` |
+| `migrations/011_payment_charges.sql` | Colunas novas em `pagamento.payment_charges` |
 
 Os pacotes ficam em `microservices/`. Os eventos usam os tipos compartilhados
 `events.WebPaymentCheckoutPayload` e `events.WebPaymentResultPayload`, os mesmos
@@ -99,7 +103,7 @@ menos 32 bytes. `MOCK_CHECKOUT_TTL` (padrão `30m`) define a validade do
 checkout. Em um banco que já existia, aplique a migration nova:
 
 ```powershell
-docker compose exec -T postgres psql -U ecommerce -d ecommerce -f /docker-entrypoint-initdb.d/008_payment_charges.sql
+docker compose exec -T postgres psql -U ecommerce -d ecommerce -f /docker-entrypoint-initdb.d/011_payment_charges.sql
 ```
 
 ## Validação automatizada

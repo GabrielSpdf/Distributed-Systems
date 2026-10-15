@@ -22,18 +22,45 @@ promoções por e-mail.
   integrado pelo PR #20;
 - outbox de compensação com assinatura preservada, confirmação do RabbitMQ,
   recuperação após indisponibilidade e limite de tentativas validados;
-- integração com Estoque/Pagamento/Entrega reais pendente das implementações
-  de Gabriel; testes atuais usam mocks e filas de captura;
 - MS Estoque com PostgreSQL, endpoint interno de catálogo e reserva por
-  eventos assinados;
+  eventos assinados (Etapa 13);
 - MS Pagamento com cobrança no Mock de Pagamento, checkout em nova aba e
-  webhook assinado com HMAC;
+  webhook assinado com HMAC, validados com o Gateway (Etapa 14);
+- integração com Entrega real pendente; testes atuais usam mocks e filas de
+  captura (ver divisão de trabalho atualizada abaixo);
 - SSE autenticado para status e checkout, atualização automática da interface,
   notificações e reconexão integrados pelo PR #21;
 - link condicional de checkout, abertura em nova aba e indicação de expiração
-  validados com evento assinado simulado na branch feat/order-checkout;
-- tela de pagamento, processamento real e cancelamento automático por expiração
-  ainda não integrados.
+  validados com evento assinado simulado e integrados pelo PR #22;
+- cancelamento automático por expiração do checkout ainda não integrado.
+
+## Atualização da divisão de trabalho - Promoções
+
+Em 12/10/2026, Lucas decidiu assumir o fluxo completo de promoções na branch
+`feat/promotion-preferences`, incluindo a parte inicialmente atribuída a Gabriel:
+
+- tela de preferências e endpoints autenticados no Gateway;
+- persistência da escolha do cliente e publicação confiável de `interesse.promocao`;
+- consumo idempotente dos interesses no MS Promoções e cancelamento da inscrição;
+- geração/publicação das ofertas por categoria usando as routing keys existentes;
+- integração com API externa de e-mail e registro das tentativas de envio;
+- testes e documentação do fluxo.
+
+Nesta branch, o fluxo de promoções foi implementado e demonstrado: preferências
+autenticadas, outbox do Gateway, consumo dos interesses, ofertas assinadas pelo
+RabbitMQ, geração manual/aleatória e envio de e-mail pelo Resend. Foram validados
+o recebimento real, o cancelamento do interesse e duas entregas do mesmo evento
+criando somente um envio por usuário. Isso não declara integração em `main`.
+
+O envio permanece restrito a `RESEND_TEST_RECIPIENT`. O gerador usa o catálogo
+local `data/inventory.json`; não consulta o serviço real de Estoque. O modo
+automático publica imediatamente e depois a cada 60 segundos, por padrão.
+
+Lucas também decidiu assumir Pagamento e Mock de Pagamento na próxima etapa;
+essa implementação ainda está pendente. Estoque e Entrega permanecem com Gabriel.
+A nova divisão deve ser comunicada a ele para evitar implementação paralela;
+não há confirmação de alinhamento registrada.
+Detalhes em [Divisão de responsabilidades](docs/steps/00-divisao-equipe/README.md).
 
 ## Guias por etapa
 
@@ -49,8 +76,9 @@ promoções por e-mail.
 - [Etapa 09 - Cancelamento e compensação (em andamento)](docs/steps/09-cancelamento-compensacao/README.md)
 - [Etapa 10 - Atualização de pedidos por SSE (em andamento)](docs/steps/10-sse-pedidos/README.md)
 - [Etapa 11 - Link de checkout dos pedidos](docs/steps/11-checkout-pedidos/README.md)
-- [Etapa 12 - MS Estoque com PostgreSQL](docs/steps/12-estoque-postgres/README.md)
-- [Etapa 13 - MS Pagamento e Mock de Pagamento](docs/steps/13-pagamento-webhook/README.md)
+- [Etapa 12 - Preferências, ofertas e e-mail de promoções](docs/steps/12-promocoes-email/README.md)
+- [Etapa 13 - MS Estoque com PostgreSQL](docs/steps/13-estoque-postgres/README.md)
+- [Etapa 14 - MS Pagamento e Mock de Pagamento](docs/steps/14-pagamento-webhook/README.md)
 
 ## Configuração inicial
 
@@ -254,7 +282,9 @@ Nunca envie ou versione os arquivos `private.pem`:
 *.exe
 ```
 
-Promoções, Consumidor 1 e Consumidor 2 não participam do fluxo de assinatura digital e não precisam de chaves.
+O novo publicador de Promoções também assina seus eventos. Para adicionar suas
+chaves sem substituir as existentes, execute `go run ./cmd/keygen -promotions-only`
+uma única vez. Os consumidores legados 1 e 2 não precisam de chave privada.
 
 ## Assinatura digital
 
@@ -277,11 +307,22 @@ São assinados os campos:
 
 O próprio campo `signature` não participa do cálculo. Eventos sem assinatura, assinados por uma chave incorreta ou alterados depois da assinatura são descartados sem reenvio.
 
-Os eventos da exchange `Promocoes` usam o mesmo envelope, mas deixam `signature` vazia e são consumidos sem validação criptográfica.
+No fluxo web desta branch, `cmd/publish-promotions` assina as ofertas e o modo
+`cmd/promocoes -offers` valida a assinatura e a categoria antes de criar os
+envios. O publicador legado `cmd/promocoes` sem flags continua sem assinatura;
+suas mensagens serão rejeitadas pelo novo consumidor. Não usá-lo na demonstração
+do envio de e-mails.
 
 ## Execução
 
 Execute todos os comandos a partir da raiz do projeto. Use um terminal separado para cada processo.
+
+No fluxo web, `cmd/estoque` e `cmd/pagamento` já seguem os contratos da
+Avaliação 02 e precisam do PostgreSQL; o Pagamento também precisa de
+`PAYMENT_WEBHOOK_SECRET` e de `cmd/mock-pagamento`. Veja as
+[Etapas 13](docs/steps/13-estoque-postgres/README.md) e
+[14](docs/steps/14-pagamento-webhook/README.md). O menu do `cmd/principal`
+abaixo publica o formato antigo de pedido e não é mais aceito pelo Estoque.
 
 Inicie os serviços consumidores antes de produzir pedidos:
 
@@ -306,6 +347,10 @@ go run ./cmd/principal
 O Principal disponibiliza um menu para consultar produtos, criar pedidos, excluir pedidos e consultar seus estados.
 
 ### Promoções
+
+Para o fluxo web com Resend, siga a [Etapa 12](docs/steps/12-promocoes-email/README.md).
+Ela documenta os processos separados `-interests`, `-offers`, `-emails` e o
+publicador manual/automático. Os comandos abaixo são da simulação legada.
 
 Inicie primeiro os consumidores:
 
@@ -353,7 +398,7 @@ Acesse [http://localhost:15672](http://localhost:15672) e confira:
 - Consumidores usam confirmação manual (`Ack`/`Nack`);
 - Eventos inválidos não são reenfileirados;
 - Os handlers devem ser idempotentes para lidar com possíveis duplicações;
-- A URL do RabbitMQ está fixa para execução local e deve ser externalizada em uma configuração futura;
+- A URL do RabbitMQ é configurada por `RABBITMQ_URL`; usar credenciais locais somente na demonstração;
 - O uso de JSON como persistência não substitui transações de banco de dados ou o padrão transactional outbox.
 
 ## Autores

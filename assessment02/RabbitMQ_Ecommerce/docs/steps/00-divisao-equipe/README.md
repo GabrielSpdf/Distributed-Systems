@@ -8,9 +8,40 @@ dois integrantes devem entender o fluxo completo para a defesa da aplicação.
 
 | Integrante | Área principal | Resultado esperado |
 |---|---|---|
-| Lucas | Experiência do cliente e orquestração | React, autenticação, pedidos, API Gateway e SSE |
-| Gabriel | Processamento e integrações | Estoque, pagamento, entrega, promoções e serviços externos |
+| Lucas | Experiência do cliente, orquestração e promoções | React, autenticação, pedidos, API Gateway, SSE e fluxo completo de promoções/e-mail |
+| Gabriel | Processamento e pagamento | Estoque, pagamento, mock de pagamento e entrega |
 | Ambos | Contratos e qualidade | Eventos, segurança, infraestrutura, testes, documentação e defesa |
+
+### Revisão de escopo em 12/10/2026
+
+Por decisão de Lucas, o fluxo completo de promoções passa a ser desenvolvido
+por ele na branch `feat/promotion-preferences`, incluindo MS Promoções,
+integração externa de e-mail, cancelamento dos interesses e registros de envio.
+As atribuições a Gabriel nas seções originais abaixo descrevem a divisão
+inicial e são substituídas por esta revisão somente no que se refere a promoções.
+Não há confirmação de alinhamento com Gabriel registrada; comunicar a mudança
+para evitar trabalho paralelo conflitante.
+
+O Gateway guardará a escolha do cliente em seu próprio schema e publicará
+as mudanças por eventos. O MS Promoções manterá os interesses usados para
+envio no schema `promocoes`. Mesmo com um único responsável pela implementação,
+nenhum serviço deve acessar diretamente as tabelas do outro.
+
+As routing keys `promocao.categoria.limpeza`, `promocao.categoria.alimentos`
+e `promocao.categoria.eletronicos` continuam representando ofertas.
+`interesse.promocao` representa inscrição ou cancelamento de preferência;
+não substitui nem reutiliza o payload das ofertas.
+
+Atualização em 14/10/2026: o fluxo de promoções foi implementado nesta branch e
+demonstrado com geração manual/aleatória, RabbitMQ e recebimento real via Resend.
+O envio está restrito ao destinatário de teste configurado. O roteiro e as
+limitações estão na [Etapa 12](../12-promocoes-email/README.md).
+
+Lucas também decidiu assumir MS Pagamento, Mock de Pagamento, checkout e webhook
+na próxima etapa. Isso é uma decisão de escopo, não uma implementação concluída.
+Gabriel permanece responsável por Estoque e Entrega. As atribuições originais
+abaixo são históricas; esta atualização prevalece para promoções e pagamento.
+Comunicar a mudança à dupla antes de alterar a parte de pagamento.
 
 ---
 

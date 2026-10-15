@@ -1,12 +1,12 @@
-# Etapa 12 - MS Estoque com PostgreSQL
+# Etapa 13 - MS Estoque com PostgreSQL
 
 ## Base e escopo
 
-Branch `feat/estoque-postgres`, criada a partir de `c30bed3`, após o PR #22.
-Gabriel substitui o Estoque da Avaliação 01, baseado em arquivos JSON, por um
-serviço que usa o schema `estoque` do PostgreSQL, expõe o catálogo por REST e
-segue os contratos da Etapa 02. Pagamento, Entrega e Promoções ficam para as
-próximas etapas.
+Branch `feat/estoque-pagamento`, criada a partir de `c30bed3` (após o PR #22)
+e atualizada com o PR #23. Gabriel substitui o Estoque da Avaliação 01,
+baseado em arquivos JSON, por um serviço que usa o schema `estoque` do
+PostgreSQL, expõe o catálogo por REST e segue os contratos da Etapa 02. O
+Pagamento está na Etapa 14 e a Entrega fica para a próxima etapa.
 
 ## Fluxo e implementação
 
@@ -29,7 +29,7 @@ Um único processo (`go run ./cmd/estoque`) mantém o servidor HTTP na porta
 | `ms-estoque/repository.go` | Consultas e transações no PostgreSQL |
 | `ms-estoque/reservation.go` | Regras puras: somar itens repetidos e achar faltas |
 | `ms-estoque/model.go` | Tipos e situações da reserva |
-| `migrations/007_stock_catalog.sql` | Produtos PROD-004 a PROD-014 |
+| `migrations/010_stock_catalog.sql` | Produtos PROD-004 a PROD-014 |
 
 Os arquivos `ms-estoque/...` ficam em `microservices/ms-estoque`. Os payloads
 usam os tipos compartilhados `events.WebOrderCreatedPayload`,
@@ -109,7 +109,7 @@ O RabbitMQ precisa estar acessível em `localhost:5672`. Em um banco que já
 existia, aplique a migration nova uma vez:
 
 ```powershell
-docker compose exec -T postgres psql -U ecommerce -d ecommerce -f /docker-entrypoint-initdb.d/007_stock_catalog.sql
+docker compose exec -T postgres psql -U ecommerce -d ecommerce -f /docker-entrypoint-initdb.d/010_stock_catalog.sql
 ```
 
 Não execute `cmd/mock-stock` ao mesmo tempo: os dois usam a porta 8081.
@@ -122,7 +122,7 @@ go test ./...
 
 Os testes do repositório usam o PostgreSQL real e só rodam com a variável.
 Use o mesmo banco de testes da Etapa 08 (`ecommerce_events_test`, com as
-migrations 001 a 007), pois os testes do Gateway recusam outro banco:
+migrations 001 a 011), pois os testes do Gateway recusam outro banco:
 
 ```powershell
 $env:TEST_DATABASE_URL = "postgres://ecommerce:ecommerce@localhost:5432/ecommerce_events_test?sslmode=disable"
@@ -162,7 +162,7 @@ Validada com RabbitMQ e PostgreSQL reais, publicando eventos assinados como
   a reserva permanece gravada sem que o Gateway seja avisado. Uma solução
   completa exigiria outbox também no Estoque.
 - O `docker-compose.yml` passou a montar a pasta `migrations` inteira, então
-  um volume novo executa as migrations 001 a 007 em ordem (validado em um
+  um volume novo executa as migrations 001 a 011 em ordem (validado em um
   container descartável). Lucas, confirme se isso combina com o seu fluxo de
   aplicar as migrations manualmente.
 - O fluxo completo pela interface (criar pedido no React e ver o status mudar)
