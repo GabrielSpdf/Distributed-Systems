@@ -37,11 +37,15 @@ demonstrado com geração manual/aleatória, RabbitMQ e recebimento real via Res
 O envio está restrito ao destinatário de teste configurado. O roteiro e as
 limitações estão na [Etapa 12](../12-promocoes-email/README.md).
 
-Lucas também decidiu assumir MS Pagamento, Mock de Pagamento, checkout e webhook
-na próxima etapa. Isso é uma decisão de escopo, não uma implementação concluída.
-Gabriel permanece responsável por Estoque e Entrega. As atribuições originais
-abaixo são históricas; esta atualização prevalece para promoções e pagamento.
-Comunicar a mudança à dupla antes de alterar a parte de pagamento.
+Atualização em 15/10/2026: Gabriel já entregou Estoque, MS Pagamento, Mock,
+checkout e webhook, integrados à `main`. A proposta anterior de Lucas assumir
+Pagamento/Mock não será implementada em paralelo; os arquivos locais iniciais
+foram retirados, preservando a implementação de Gabriel.
+
+Lucas fica com a expiração do checkout no Gateway e sua compensação de estoque,
+descritas na [Etapa 15](../15-expiracao-checkout/README.md). Entrega continua com
+Gabriel. A dupla ainda deve combinar manutenção e apresentação de Pagamento/Mock.
+A revisão de responsabilidade sobre promoções continua válida.
 
 ---
 
