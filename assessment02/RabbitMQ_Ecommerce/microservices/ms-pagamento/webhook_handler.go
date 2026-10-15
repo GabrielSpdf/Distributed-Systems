@@ -121,6 +121,11 @@ func (handler *WebhookHandler) receive(writer http.ResponseWriter, request *http
 		log.Printf("[ERRO] Marcação do resultado da cobrança %s: %v", charge.ID, err)
 	}
 
+	if charge.Status == ChargeApproved {
+		printBanner("PAGAMENTO APROVADO - PEDIDO - %s", charge.OrderID)
+	} else {
+		printBanner("PAGAMENTO RECUSADO - PEDIDO - %s", charge.OrderID)
+	}
 	log.Printf("[SUCESSO] Pagamento do pedido %s %s", charge.OrderID, charge.Status)
 
 	writer.WriteHeader(http.StatusNoContent)

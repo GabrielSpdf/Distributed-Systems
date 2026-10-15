@@ -127,6 +127,7 @@ func (handler *EventHandler) Handle(envelope events.EventEnvelope) error {
 		return err
 	}
 
+	printBanner("CHECKOUT DISPONÍVEL - PEDIDO - %s", charge.OrderID)
 	log.Printf("[SUCESSO] Checkout do pedido %s publicado", charge.OrderID)
 
 	return nil

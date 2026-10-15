@@ -127,6 +127,7 @@ func (handler *EventHandler) handleOrderCreated(
 			)
 		}
 
+		printBanner("ESTOQUE VERIFICADO - PEDIDO - %s", payload.OrderID)
 		log.Printf("[SUCESSO] Pedido %s reservado", payload.OrderID)
 
 	case ReservationUnavailable:
@@ -166,6 +167,7 @@ func (handler *EventHandler) handleOrderCreated(
 			)
 		}
 
+		printBanner("ESTOQUE INDISPONÍVEL - PEDIDO - %s", payload.OrderID)
 		log.Printf("[AVISO] Estoque indisponível para o pedido %s", payload.OrderID)
 
 	default:
@@ -201,6 +203,7 @@ func (handler *EventHandler) handleOrderDeleted(
 		)
 	}
 
+	printBanner("PEDIDO EXCLUÍDO - PEDIDO - %s", payload.OrderID)
 	log.Printf(
 		"[SUCESSO] Exclusão do pedido %s tratada: situação %s, motivo %s",
 		payload.OrderID,

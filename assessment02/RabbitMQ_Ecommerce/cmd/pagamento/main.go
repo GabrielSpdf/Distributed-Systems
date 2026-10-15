@@ -49,6 +49,11 @@ func run() error {
 	defer paymentService.Connection.Close()
 	defer paymentService.Channel.Close()
 
+	fmt.Println("[SUCESSO] Microsserviço pagamento inicializado com sucesso")
+	fmt.Println("==================================================================")
+	fmt.Println("                      MICROSSERVIÇO PAGAMENTO                     ")
+	fmt.Println("==================================================================")
+
 	repository := mspagamento.NewRepository(databasePool)
 	publisher := mspagamento.NewSignedPublisher(
 		paymentService.Channel,

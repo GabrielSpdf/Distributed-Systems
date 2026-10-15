@@ -44,6 +44,10 @@ func run() error {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	fmt.Println("==================================================================")
+	fmt.Println("                        MOCK DE PAGAMENTO                         ")
+	fmt.Println("==================================================================")
+
 	log.Printf(
 		"[SUCESSO] Mock de Pagamento disponível em http://localhost%s (checkout válido por %s)",
 		server.Addr,

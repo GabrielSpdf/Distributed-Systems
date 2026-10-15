@@ -44,6 +44,11 @@ func run() error {
 	defer stockService.Connection.Close()
 	defer stockService.Channel.Close()
 
+	fmt.Println("[SUCESSO] Microsserviço estoque inicializado com sucesso")
+	fmt.Println("==================================================================")
+	fmt.Println("                      MICROSSERVIÇO ESTOQUE                       ")
+	fmt.Println("==================================================================")
+
 	repository := msestoque.NewRepository(databasePool)
 
 	eventHandler := msestoque.NewEventHandler(
