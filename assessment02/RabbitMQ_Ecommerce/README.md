@@ -32,7 +32,9 @@ promoções por e-mail.
   notificações e reconexão integrados pelo PR #21;
 - link condicional de checkout, abertura em nova aba e indicação de expiração
   validados com evento assinado simulado e integrados pelo PR #22;
-- cancelamento automático por expiração do checkout ainda não integrado.
+- cancelamento automático por expiração implementado na branch
+  `feat/checkout-expiration`, com compensação pela outbox e atualização por SSE;
+  demonstração local validada, integração em `main` pendente (Etapa 15).
 
 ## Atualização da divisão de trabalho - Promoções
 
@@ -46,20 +48,21 @@ Em 12/10/2026, Lucas decidiu assumir o fluxo completo de promoções na branch
 - integração com API externa de e-mail e registro das tentativas de envio;
 - testes e documentação do fluxo.
 
-Nesta branch, o fluxo de promoções foi implementado e demonstrado: preferências
+O fluxo de promoções foi integrado pelo PR #23 e demonstrado: preferências
 autenticadas, outbox do Gateway, consumo dos interesses, ofertas assinadas pelo
 RabbitMQ, geração manual/aleatória e envio de e-mail pelo Resend. Foram validados
 o recebimento real, o cancelamento do interesse e duas entregas do mesmo evento
-criando somente um envio por usuário. Isso não declara integração em `main`.
+criando somente um envio por usuário.
 
 O envio permanece restrito a `RESEND_TEST_RECIPIENT`. O gerador usa o catálogo
 local `data/inventory.json`; não consulta o serviço real de Estoque. O modo
 automático publica imediatamente e depois a cada 60 segundos, por padrão.
 
-Lucas também decidiu assumir Pagamento e Mock de Pagamento na próxima etapa;
-essa implementação ainda está pendente. Estoque e Entrega permanecem com Gabriel.
-A nova divisão deve ser comunicada a ele para evitar implementação paralela;
-não há confirmação de alinhamento registrada.
+Estoque, Pagamento e Mock foram implementados por Gabriel e já estão na `main`.
+A proposta anterior de Lucas assumir Pagamento/Mock não gerou outra implementação:
+o trabalho local foi retirado para evitar duplicação. Lucas implementa a expiração
+no Gateway; Entrega permanece como próxima integração de Gabriel. A manutenção e
+a apresentação de Pagamento/Mock devem ser combinadas entre os dois.
 Detalhes em [Divisão de responsabilidades](docs/steps/00-divisao-equipe/README.md).
 
 ## Guias por etapa
@@ -79,6 +82,7 @@ Detalhes em [Divisão de responsabilidades](docs/steps/00-divisao-equipe/README.
 - [Etapa 12 - Preferências, ofertas e e-mail de promoções](docs/steps/12-promocoes-email/README.md)
 - [Etapa 13 - MS Estoque com PostgreSQL](docs/steps/13-estoque-postgres/README.md)
 - [Etapa 14 - MS Pagamento e Mock de Pagamento](docs/steps/14-pagamento-webhook/README.md)
+- [Etapa 15 - Expiração automática do checkout](docs/steps/15-expiracao-checkout/README.md)
 
 ## Configuração inicial
 

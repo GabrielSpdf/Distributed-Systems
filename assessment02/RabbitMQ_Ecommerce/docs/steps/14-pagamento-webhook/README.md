@@ -145,8 +145,10 @@ reais, RabbitMQ e PostgreSQL:
   abertos (o Pagamento mantém sua cópia no banco).
 - O MS Entrega ainda é o da Avaliação 01 e precisa ser adaptado ao novo
   `pagamento.aprovado` na próxima etapa.
-- O cancelamento automático por expiração do checkout continua com Lucas; o
-  Mock já recusa cliques após `expires_at`.
+- O Mock já recusa cliques após `expires_at`. Lucas implementou a expiração no
+  Gateway na branch `feat/checkout-expiration`, com demonstração local validada;
+  consultar a [Etapa 15](../15-expiracao-checkout/README.md), inclusive os limites
+  de concorrência com pagamentos atrasados. Integração dessa branch ainda pendente.
 
 ## Estado
 
