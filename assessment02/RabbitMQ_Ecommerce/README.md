@@ -24,6 +24,10 @@ promoções por e-mail.
   recuperação após indisponibilidade e limite de tentativas validados;
 - integração com Estoque/Pagamento/Entrega reais pendente das implementações
   de Gabriel; testes atuais usam mocks e filas de captura;
+- MS Estoque com PostgreSQL, endpoint interno de catálogo e reserva por
+  eventos assinados;
+- MS Pagamento com cobrança no Mock de Pagamento, checkout em nova aba e
+  webhook assinado com HMAC;
 - SSE autenticado para status e checkout, atualização automática da interface,
   notificações e reconexão integrados pelo PR #21;
 - link condicional de checkout, abertura em nova aba e indicação de expiração
@@ -45,6 +49,8 @@ promoções por e-mail.
 - [Etapa 09 - Cancelamento e compensação (em andamento)](docs/steps/09-cancelamento-compensacao/README.md)
 - [Etapa 10 - Atualização de pedidos por SSE (em andamento)](docs/steps/10-sse-pedidos/README.md)
 - [Etapa 11 - Link de checkout dos pedidos](docs/steps/11-checkout-pedidos/README.md)
+- [Etapa 12 - MS Estoque com PostgreSQL](docs/steps/12-estoque-postgres/README.md)
+- [Etapa 13 - MS Pagamento e Mock de Pagamento](docs/steps/13-pagamento-webhook/README.md)
 
 ## Configuração inicial
 

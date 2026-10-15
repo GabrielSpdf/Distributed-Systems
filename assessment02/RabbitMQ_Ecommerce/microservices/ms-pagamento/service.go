@@ -2,10 +2,9 @@ package mspagamento
 
 import (
 	"crypto/rsa"
-	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
+	"sync"
 
 	"RabbitMQ_Ecommerce/utils/cryptography"
 	"RabbitMQ_Ecommerce/utils/events"
@@ -111,133 +110,46 @@ func InitializePaymentService() (
 	return runtime, nil
 }
 
-func ShouldApprovePayment() bool {
-	/*
-		True = Pagamento aprovado (85%)
-		False = Pagamento recusado (15%)
-	*/
-	return rand.Float64() > 0.15
+// SignedPublisher signs each event as ms-pagamento and sends it to the
+// eCommerce exchange. The consumer and the webhook handlers share the channel,
+// so publications are serialized.
+type SignedPublisher struct {
+	mu         sync.Mutex
+	channel    *amqp.Channel
+	privateKey *rsa.PrivateKey
 }
 
-func HandlePaymentEvent(
-	envelope events.EventEnvelope,
+func NewSignedPublisher(
 	channel *amqp.Channel,
 	privateKey *rsa.PrivateKey,
-) error {
-	var payload events.OrderReferencePayload
-
-	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
-		return fmt.Errorf(
-			"erro ao desserializar pedido.estoque_ok: %w",
-			err,
-		)
+) *SignedPublisher {
+	return &SignedPublisher{
+		channel:    channel,
+		privateKey: privateKey,
 	}
-
-	switch envelope.EventType {
-	case events.OrderStockConfirmed:
-		if ShouldApprovePayment() {
-			err := PublishPaymentApproved(
-				channel,
-				privateKey,
-				payload.OrderID,
-			)
-
-			if err != nil {
-				return fmt.Errorf(
-					"erro ao processar pagamento: %w",
-					err,
-				)
-			}
-
-			log.Printf(
-				"[SUCESSO] Pagamento do pedido %s realizado com sucesso!",
-				payload.OrderID,
-			)
-		} else {
-			if err := PublishPaymentRefused(
-				channel,
-				privateKey,
-				payload.OrderID,
-				"pagamento recusado pela operadora",
-			); err != nil {
-				return fmt.Errorf(
-					"erro ao processar pagamento: %w",
-					err,
-				)
-			}
-
-			log.Printf(
-				"[ERRO] Pagamento do pedido %s recusado...",
-				payload.OrderID,
-			)
-		}
-
-	default:
-		return fmt.Errorf(
-			"tipo de evento inesperado no Pagamento: %s",
-			envelope.EventType,
-		)
-	}
-
-	return nil
 }
 
-func PublishPaymentApproved(
-	channel *amqp.Channel,
-	privateKey *rsa.PrivateKey,
-	orderID string,
+func (publisher *SignedPublisher) Publish(
+	eventType string,
+	payload any,
 ) error {
-	payload := events.PaymentResultPayload{
-		OrderID: orderID,
-	}
-
 	envelope, err := misc.BuildSignedEnvelope(
 		payload,
-		events.PaymentApproved,
+		eventType,
 		events.ProducerPayment,
-		privateKey,
+		publisher.privateKey,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao montar envelope: %w", err)
 	}
 
-	if err := rabbitmq.PublishEvent(
-		channel,
-		events.ExchangeEcommerce,
-		events.PaymentApproved,
-		envelope,
-	); err != nil {
-		return fmt.Errorf("erro ao enviar evento: %w", err)
-	}
-
-	return nil
-}
-
-func PublishPaymentRefused(
-	channel *amqp.Channel,
-	privateKey *rsa.PrivateKey,
-	orderID string,
-	reason string,
-) error {
-	payload := events.PaymentResultPayload{
-		OrderID: orderID,
-		Reason:  reason,
-	}
-
-	envelope, err := misc.BuildSignedEnvelope(
-		payload,
-		events.PaymentRefused,
-		events.ProducerPayment,
-		privateKey,
-	)
-	if err != nil {
-		return fmt.Errorf("erro ao montar envelope: %w", err)
-	}
+	publisher.mu.Lock()
+	defer publisher.mu.Unlock()
 
 	if err := rabbitmq.PublishEvent(
-		channel,
+		publisher.channel,
 		events.ExchangeEcommerce,
-		events.PaymentRefused,
+		eventType,
 		envelope,
 	); err != nil {
 		return fmt.Errorf("erro ao enviar evento: %w", err)

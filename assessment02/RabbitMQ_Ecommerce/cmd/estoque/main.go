@@ -1,68 +1,105 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	msestoque "RabbitMQ_Ecommerce/microservices/ms-estoque"
-	msprincipal "RabbitMQ_Ecommerce/microservices/ms-principal"
-	"RabbitMQ_Ecommerce/utils/events"
-	"RabbitMQ_Ecommerce/utils/inventory"
+	"RabbitMQ_Ecommerce/utils/config"
+	"RabbitMQ_Ecommerce/utils/database"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatalf(
-			"[ERRO] Erro ao executar o sistema: %v",
-			err,
-		)
+		log.Fatalf("[ERRO] MS Estoque encerrado: %v", err)
 	}
 }
 
 func run() error {
+	configuration := config.Load()
+
+	databasePool, err := database.Connect(
+		context.Background(),
+		configuration.DatabaseURL,
+	)
+	if err != nil {
+		return fmt.Errorf("erro ao inicializar o PostgreSQL: %w", err)
+	}
+	defer databasePool.Close()
+
+	log.Println("[SUCESSO] Conexão com o PostgreSQL estabelecida")
+
 	stockService, err := msestoque.InitializeStockService()
 	if err != nil {
 		return err
 	}
-
-	fmt.Println("[SUCESSO] Microsserviço estoque inicializado com sucesso")
-
 	defer stockService.Connection.Close()
 	defer stockService.Channel.Close()
 
-	fmt.Println("==================================================================")
-	fmt.Println("                      MICROSSERVIÇO ESTOQUE                       ")
-	fmt.Println("==================================================================")
+	repository := msestoque.NewRepository(databasePool)
 
-	inventoryData, err := inventory.Load("inventory.json")
-	if err != nil {
-		return err
-	}
-
-	stock := inventoryData.Stock
-
-	ordersData, err := msprincipal.LoadOrders("data/orders.json")
-	if err != nil {
-		return err
-	}
-
-	reservations := make(map[string]events.Order)
-
-	for _, order := range ordersData.Orders {
-		if order.Status == events.StatusStockReserved ||
-			order.Status == events.StatusPaymentApproved ||
-			order.Status == events.StatusShipped {
-			reservations[order.OrderID] = order
-		}
-	}
-
-	return rabbitmq.ConsumeSignedEvents(
-		stockService.Channel,
-		stockService.QueueName,
-		stockService.PublicKeys,
-		func(envelope events.EventEnvelope) error {
-			return msestoque.HandleStockEvent(envelope, stock, reservations, stockService.Channel, stockService.PrivateKey, "inventory.json")
-		},
+	eventHandler := msestoque.NewEventHandler(
+		repository,
+		msestoque.NewSignedPublisher(
+			stockService.Channel,
+			stockService.PrivateKey,
+		),
 	)
+
+	server := &http.Server{
+		Addr:              ":" + configuration.StockPort,
+		Handler:           msestoque.NewHTTPHandler(repository).Routes(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	serverErrors := make(chan error, 1)
+	go func() {
+		log.Printf("[SUCESSO] MS Estoque disponível em http://localhost%s", server.Addr)
+		serverErrors <- server.ListenAndServe()
+	}()
+
+	consumerErrors := make(chan error, 1)
+	go func() {
+		consumerErrors <- rabbitmq.ConsumeSignedEvents(
+			stockService.Channel,
+			stockService.QueueName,
+			stockService.PublicKeys,
+			eventHandler.Handle,
+		)
+	}()
+
+	interrupts := make(chan os.Signal, 1)
+	signal.Notify(interrupts, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case err := <-serverErrors:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+
+		return fmt.Errorf("erro no servidor HTTP: %w", err)
+	case err := <-consumerErrors:
+		if err != nil {
+			return fmt.Errorf("consumidor de eventos encerrado: %w", err)
+		}
+
+		return errors.New("consumidor de eventos encerrado: canal RabbitMQ fechado")
+	case <-interrupts:
+		if err := server.Close(); err != nil {
+			return fmt.Errorf("erro ao encerrar servidor HTTP: %w", err)
+		}
+
+		return nil
+	}
 }
