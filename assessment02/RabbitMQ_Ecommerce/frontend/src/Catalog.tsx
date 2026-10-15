@@ -23,20 +23,26 @@ function Catalog({ onAddToCart, cartItems }: CatalogProps) {
 
   useEffect(() => {
     let active = true
+    let requestInFlight = false
 
     setLoading(true)
     setError('')
 
-    getProducts({
-      category: category || undefined,
-      available: onlyAvailable ? true : undefined,
-    })
-      .then((result) => {
+    async function refreshProducts() {
+      if (!active || requestInFlight) return
+      requestInFlight = true
+
+      try {
+        const result = await getProducts({
+          category: category || undefined,
+          available: onlyAvailable ? true : undefined,
+        })
+
         if (active) {
           setProducts(result.products)
+          setError('')
         }
-      })
-      .catch((requestError: unknown) => {
+      } catch (requestError: unknown) {
         if (active) {
           setError(
             requestError instanceof Error
@@ -44,15 +50,29 @@ function Catalog({ onAddToCart, cartItems }: CatalogProps) {
               : 'Não foi possível carregar o catálogo',
           )
         }
-      })
-      .finally(() => {
+      } finally {
+        requestInFlight = false
         if (active) {
           setLoading(false)
         }
-      })
+      }
+    }
+
+    // Refresh in the background without hiding the current products.
+    void refreshProducts()
+
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void refreshProducts()
+    }
+    const refreshTimer = window.setInterval(refreshWhenVisible, 5000)
+    window.addEventListener('focus', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
 
     return () => {
       active = false
+      window.clearInterval(refreshTimer)
+      window.removeEventListener('focus', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [category, onlyAvailable, reload])
 
@@ -105,12 +125,18 @@ function Catalog({ onAddToCart, cartItems }: CatalogProps) {
         </label>
       </div>
 
+      {error && products.length > 0 && !loading && (
+        <p className="form-error" role="alert">
+          {error}. Exibindo os últimos dados disponíveis; tentando novamente.
+        </p>
+      )}
+
       {loading ? (
         <div className="catalog-state" role="status">
           <div className="loader" />
           <p>Carregando produtos...</p>
         </div>
-      ) : error ? (
+      ) : error && products.length === 0 ? (
         <div className="catalog-state">
           <p className="form-error" role="alert">{error}</p>
           <button
