@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"time"
 
-	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/webhook"
 )
 
@@ -28,26 +27,26 @@ var uuidPattern = regexp.MustCompile(
 
 // ResultStore is what the webhook endpoint needs from the database.
 type ResultStore interface {
+	OutboxStore
 	ApplyWebhook(ctx context.Context, event WebhookEvent, reason string) (WebhookOutcome, error)
-	MarkResultPublished(ctx context.Context, chargeID string) error
 	Ping(ctx context.Context) error
 }
 
 type WebhookHandler struct {
-	store     ResultStore
-	publisher EventPublisher
-	secret    string
+	store  ResultStore
+	outbox *Outbox
+	secret string
 }
 
 func NewWebhookHandler(
 	store ResultStore,
-	publisher EventPublisher,
+	bus EventBus,
 	secret string,
 ) *WebhookHandler {
 	return &WebhookHandler{
-		store:     store,
-		publisher: publisher,
-		secret:    secret,
+		store:  store,
+		outbox: NewOutbox(store, bus),
+		secret: secret,
 	}
 }
 
@@ -97,6 +96,13 @@ func (handler *WebhookHandler) receive(writer http.ResponseWriter, request *http
 	case errors.Is(err, ErrConflictingResult):
 		writeError(writer, http.StatusConflict, "CONFLICTING_RESULT", "cobrança já possui outro resultado")
 		return
+	case errors.Is(err, ErrCheckoutExpired):
+		writeError(writer, http.StatusConflict, "CHECKOUT_EXPIRED", "pagamento decidido depois do prazo do checkout")
+		return
+	case errors.Is(err, ErrWebhookEventReused):
+		log.Printf("[AVISO] Webhook %s reutilizado para a cobrança %s", event.EventID, event.ChargeID)
+		writeError(writer, http.StatusConflict, "EVENT_ID_CONFLICT", "event_id já usado em outra cobrança")
+		return
 	case err != nil:
 		log.Printf("[ERRO] Webhook %s: %v", event.EventID, err)
 		writeError(writer, http.StatusInternalServerError, "INTERNAL_ERROR", "não foi possível processar o webhook")
@@ -110,23 +116,20 @@ func (handler *WebhookHandler) receive(writer http.ResponseWriter, request *http
 		return
 	}
 
-	if err := handler.publishResult(charge); err != nil {
-		// Sem publicação o Gateway não seria avisado: o Mock deve tentar de novo.
-		log.Printf("[ERRO] Resultado da cobrança %s: %v", charge.ID, err)
-		writeError(writer, http.StatusInternalServerError, "PUBLISH_FAILED", "não foi possível publicar o resultado")
+	// Só uma cobrança decidida tem resultado para publicar.
+	if charge.Status != ChargeApproved && charge.Status != ChargeRefused {
+		log.Printf("[ERRO] Webhook %s sem resultado gravado para a cobrança %s", event.EventID, charge.ID)
+		writeError(writer, http.StatusConflict, "CONFLICTING_RESULT", "cobrança sem resultado gravado")
 		return
 	}
 
-	if err := handler.store.MarkResultPublished(ctx, charge.ID); err != nil {
-		log.Printf("[ERRO] Marcação do resultado da cobrança %s: %v", charge.ID, err)
+	// Só falha se o evento não puder ser gravado: aí o Mock deve tentar de
+	// novo. Falha no RabbitMQ deixa o evento pendente para a rotina de reenvio.
+	if err := handler.outbox.PublishResult(ctx, charge); err != nil {
+		log.Printf("[ERRO] Resultado da cobrança %s: %v", charge.ID, err)
+		writeError(writer, http.StatusInternalServerError, "INTERNAL_ERROR", "não foi possível registrar o resultado")
+		return
 	}
-
-	if charge.Status == ChargeApproved {
-		printBanner("PAGAMENTO APROVADO - PEDIDO - %s", charge.OrderID)
-	} else {
-		printBanner("PAGAMENTO RECUSADO - PEDIDO - %s", charge.OrderID)
-	}
-	log.Printf("[SUCESSO] Pagamento do pedido %s %s", charge.OrderID, charge.Status)
 
 	writer.WriteHeader(http.StatusNoContent)
 }
@@ -137,26 +140,6 @@ func validWebhook(event WebhookEvent) bool {
 		event.OrderID != "" &&
 		(event.Status == ChargeApproved || event.Status == ChargeRefused) &&
 		!event.OccurredAt.IsZero()
-}
-
-func (handler *WebhookHandler) publishResult(charge Charge) error {
-	eventType := events.PaymentApproved
-	reason := ""
-
-	if charge.Status == ChargeRefused {
-		eventType = events.PaymentRefused
-		reason = charge.Reason
-	}
-
-	return handler.publisher.Publish(eventType, events.WebPaymentResultPayload{
-		OrderID:     charge.OrderID,
-		CustomerID:  charge.CustomerID,
-		ChargeID:    charge.ID,
-		Amount:      charge.Amount,
-		Currency:    charge.Currency,
-		Reason:      reason,
-		ProcessedAt: charge.ProcessedAt,
-	})
 }
 
 func (handler *WebhookHandler) health(writer http.ResponseWriter, request *http.Request) {

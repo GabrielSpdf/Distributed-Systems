@@ -1,5 +1,10 @@
 # Etapa 02 - Contratos de integração
 
+> **Atualizado em 15/10/2026 (Etapa 17):** autoridade do prazo no MS Pagamento
+> (seções 7 e 8), dados de envio no detalhe do pedido em vez de rota própria
+> (seção 10), e-mail na inscrição de promoções (seção 11), método QUERY retirado
+> (seção 14) e regras de falha e repetição (seção 18).
+
 Este documento registra os contratos aprovados antes da implementação. O
 objetivo é permitir que Lucas e Gabriel trabalhem em paralelo usando simulações
 compatíveis com as interfaces reais.
@@ -260,7 +265,14 @@ Respostas principais:
 - `400`: conteúdo inválido;
 - `401`: assinatura inválida;
 - `404`: cobrança inexistente;
-- `409`: resultado conflitante.
+- `409`: resultado conflitante, `event_id` já usado por outra cobrança
+  (`EVENT_ID_CONFLICT`) ou decisão posterior ao prazo (`CHECKOUT_EXPIRED`).
+
+O MS Pagamento é a autoridade do prazo de cada cobrança. A linha da cobrança é
+travada na decisão: ou o webhook aprova/recusa antes, ou a expiração vence; as
+duas nunca valem juntas. Um webhook com `occurred_at` depois de `expires_at`,
+ou para uma cobrança já expirada, recebe `409` e não gera evento. O Mock trata
+esse `409` como recusa definitiva da loja.
 
 ---
 
@@ -294,6 +306,16 @@ Respostas principais:
 ```
 
 Após recusa, o Principal publica `pedido.excluido` para liberar o estoque.
+
+### Checkout expirado
+
+Quando o prazo vence sem decisão (5 s de tolerância), o MS Pagamento marca a
+cobrança como `EXPIRED` e publica `pagamento.recusado` com
+`"reason": "CHECKOUT_EXPIRED"`. O Gateway coloca o pedido em `CANCELADO`
+(não em `PAGAMENTO_RECUSADO`) e publica `pedido.excluido` com motivo
+`CHECKOUT_EXPIRED`. O executor de expiração do Gateway fica como rede de
+segurança: só cancela checkouts vencidos há mais de 10 minutos, caso o
+Pagamento esteja fora do ar.
 
 ---
 
@@ -349,11 +371,11 @@ impedir uma reserva posterior.
 
 Cada `order_id` gera apenas uma entrega, nota fiscal e código de rastreamento.
 
-Endpoint público:
-
-```http
-GET /api/orders/{orderId}/tracking
-```
+Não há rota própria de rastreamento: depois do envio, `GET /api/orders` e
+`GET /api/orders/{orderId}` incluem `invoice_id`, `tracking_code` e
+`shipped_at`, e a tela de pedidos os mostra. (A rota
+`/api/orders/{orderId}/tracking` foi retirada; o enunciado exige apenas a
+notificação "Pedido Enviado".)
 
 ---
 
@@ -367,7 +389,17 @@ POST   /api/promotion-interests
 DELETE /api/promotion-interests/{category}
 ```
 
-O e-mail vem do usuário autenticado.
+O cliente pode informar o e-mail na inscrição (enunciado: "registrar interesse,
+informando o e-mail"):
+
+```json
+{ "categories": ["alimentos"], "email": "cliente@email.com" }
+```
+
+`email` é opcional; sem ele vale o e-mail já usado nas preferências ou, na
+primeira inscrição, o da conta. E-mail inválido recebe `400`. Trocar só o
+e-mail gera novo `interesse.promocao` com todas as categorias ativas.
+`GET /api/promotion-interests` devolve `{"categories": [...], "email": "..."}`.
 
 ### Evento `interesse.promocao`
 
@@ -458,35 +490,11 @@ retornados e não presume que uma ação está sempre disponível.
 
 ---
 
-## 14. Método QUERY
+## 14. Método QUERY (retirado)
 
-```http
-QUERY /api/orders/search
-Content-Type: application/json
-```
-
-```json
-{
-  "statuses": ["PAGAMENTO_APROVADO", "ENVIADO"],
-  "created_from": "2026-09-01T00:00:00Z",
-  "created_to": "2026-10-01T23:59:59Z",
-  "minimum_total": 100.00,
-  "maximum_total": 1000.00,
-  "product_id": "PROD-003",
-  "limit": 20,
-  "offset": 0,
-  "sort": "created_at_desc"
-}
-```
-
-O método é seguro e idempotente. A busca sempre adiciona o usuário autenticado
-como restrição. `limit` tem valor padrão 20 e máximo 100.
-
-O CORS deve permitir:
-
-```text
-GET, POST, PATCH, DELETE, QUERY, OPTIONS
-```
+O endpoint `QUERY /api/orders/search` não foi implementado e saiu do contrato:
+o enunciado não exige busca nem o método QUERY. A listagem é feita por
+`GET /api/orders`.
 
 ---
 
@@ -499,6 +507,7 @@ PENDENTE
 └── ESTOQUE_CONFIRMADO
     ├── CANCELADO
     └── AGUARDANDO_PAGAMENTO
+        ├── CANCELADO (checkout expirado)
         ├── PAGAMENTO_RECUSADO
         └── PAGAMENTO_APROVADO
             └── ENVIADO
@@ -523,6 +532,7 @@ FALHA_NO_PROCESSAMENTO
 | `gateway` | API Gateway |
 | `estoque` | MS Estoque |
 | `pagamento` | MS Pagamento |
+| `entrega` | MS Entrega |
 | `promocoes` | MS Promoções |
 
 Nenhum serviço acessa diretamente as tabelas de outro. A comunicação acontece
@@ -549,6 +559,28 @@ por REST ou RabbitMQ.
 - API externa de e-mail.
 
 As simulações devem usar exatamente os contratos deste documento.
+
+## 18. Falhas, repetição e revisão
+
+Estoque, Pagamento e Entrega seguem as mesmas regras:
+
+- cada evento de saída é assinado uma vez e gravado no banco antes de ser
+  publicado; toda repetição reenvia o mesmo `event_id`;
+- a publicação usa confirmação do RabbitMQ e `mandatory`; o evento só é marcado
+  como publicado depois da confirmação, e uma rotina reenvia os pendentes a
+  cada 10 s;
+- mensagem inválida (JSON, routing key, produtor, assinatura ou payload) é
+  rejeitada e registrada, sem novas tentativas;
+- falha temporária (banco, Mock, RabbitMQ) tem até 5 tentativas com espera de
+  1, 2, 4 e 8 s; esgotadas, a mensagem original vai para a fila
+  `<fila>.revisao` (`estoque.revisao`, `pagamento.revisao`,
+  `entrega.revisao`) com motivo, tentativas e routing key original;
+- `go run ./cmd/reprocessar -fila <fila>` devolve as mensagens da revisão para
+  a fila original depois de resolvida a causa.
+
+O Gateway e o MS Promoções mantêm seus próprios inbox/outbox.
+
+---
 
 ## Critério de conclusão
 

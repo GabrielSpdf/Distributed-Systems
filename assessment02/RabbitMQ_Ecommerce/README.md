@@ -26,15 +26,21 @@ promoções por e-mail.
   eventos assinados (Etapa 13);
 - MS Pagamento com cobrança no Mock de Pagamento, checkout em nova aba e
   webhook assinado com HMAC, validados com o Gateway (Etapa 14);
-- integração com Entrega real pendente; testes atuais usam mocks e filas de
-  captura (ver divisão de trabalho atualizada abaixo);
+- MS Entrega com os contratos atuais, uma entrega por pedido, nota e rastreio
+  simulados e `pedido.enviado` publicado com confirmação do RabbitMQ (Etapa 16);
 - SSE autenticado para status e checkout, atualização automática da interface,
   notificações e reconexão integrados pelo PR #21;
 - link condicional de checkout, abertura em nova aba e indicação de expiração
   validados com evento assinado simulado e integrados pelo PR #22;
 - cancelamento automático por expiração implementado na branch
   `feat/checkout-expiration`, com compensação pela outbox e atualização por SSE;
-  demonstração local validada, integração em `main` pendente (Etapa 15).
+  integrado pelo PR #26 (Etapa 15); com a Etapa 17 o MS Pagamento passou a
+  ser a autoridade do prazo e o executor do Gateway virou rede de segurança;
+- consumidor confiável com novas tentativas e filas de revisão, publicação com
+  confirmação do RabbitMQ, rastreio no pedido e e-mail na inscrição de
+  promoções (Etapa 17);
+- matriz de integração T01–T20 executada com evidências (Etapa 18) e roteiro
+  de demonstração em [docs/demo](docs/demo/README.md).
 
 ## Atualização da divisão de trabalho - Promoções
 
@@ -83,6 +89,10 @@ Detalhes em [Divisão de responsabilidades](docs/steps/00-divisao-equipe/README.
 - [Etapa 13 - MS Estoque com PostgreSQL](docs/steps/13-estoque-postgres/README.md)
 - [Etapa 14 - MS Pagamento e Mock de Pagamento](docs/steps/14-pagamento-webhook/README.md)
 - [Etapa 15 - Expiração automática do checkout](docs/steps/15-expiracao-checkout/README.md)
+- [Etapa 16 - MS Entrega com os contratos da Avaliação 02](docs/steps/16-entrega/README.md)
+- [Etapa 17 - Confiabilidade, autoridade do prazo e ajustes finais](docs/steps/17-confiabilidade-expiracao/README.md)
+- [Etapa 18 - Validação de integração (T01–T20)](docs/steps/18-validacao-integracao/README.md)
+- [Roteiro de execução e demonstração](docs/demo/README.md)
 
 ## Configuração inicial
 
@@ -318,6 +328,10 @@ suas mensagens serão rejeitadas pelo novo consumidor. Não usá-lo na demonstra
 do envio de e-mails.
 
 ## Execução
+
+Para o fluxo web completo (Avaliação 02), siga o
+[roteiro de execução e demonstração](docs/demo/README.md). As instruções abaixo
+são da Avaliação 01.
 
 Execute todos os comandos a partir da raiz do projeto. Use um terminal separado para cada processo.
 

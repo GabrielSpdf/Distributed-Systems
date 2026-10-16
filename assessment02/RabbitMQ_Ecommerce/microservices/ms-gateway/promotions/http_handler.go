@@ -59,10 +59,27 @@ func (handler *HTTPHandler) list(
 		categories = []string{}
 	}
 
+	email, err := handler.repository.PreferredEmail(ctx, userID)
+	if errors.Is(err, ErrUserNotFound) {
+		writeError(writer, http.StatusUnauthorized, "usuário não autenticado")
+		return
+	}
+	if err != nil {
+		log.Printf("[ERRO] Consulta do e-mail das promoções: %v", err)
+		writeError(
+			writer,
+			http.StatusInternalServerError,
+			"não foi possível consultar as preferências",
+		)
+		return
+	}
+
 	writeJSON(writer, http.StatusOK, struct {
 		Categories []string `json:"categories"`
+		Email      string   `json:"email"`
 	}{
 		Categories: categories,
+		Email:      email,
 	})
 }
 
@@ -104,7 +121,16 @@ func (handler *HTTPHandler) subscribe(
 	ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 	defer cancel()
 
-	changed, err := handler.repository.Subscribe(ctx, userID, input.Categories)
+	changed, err := handler.repository.SubscribeWithEmail(
+		ctx,
+		userID,
+		input.Categories,
+		input.Email,
+	)
+	if errors.Is(err, ErrInvalidEmail) {
+		writeError(writer, http.StatusBadRequest, "e-mail inválido")
+		return
+	}
 	if errors.Is(err, ErrUserNotFound) {
 		writeError(writer, http.StatusUnauthorized, "usuário não autenticado")
 		return

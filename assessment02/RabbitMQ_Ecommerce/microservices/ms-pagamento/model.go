@@ -9,12 +9,17 @@ const (
 	ChargePending  = "PENDING"
 	ChargeApproved = "APPROVED"
 	ChargeRefused  = "REFUSED"
+	// ChargeExpired: prazo do checkout vencido sem decisão. O Pagamento é a
+	// autoridade: depois disso nenhum webhook aprova a cobrança.
+	ChargeExpired = "EXPIRED"
 )
 
 var (
 	ErrChargeNotFound     = errors.New("cobrança não encontrada")
 	ErrInvalidWebhook     = errors.New("webhook inválido")
 	ErrConflictingResult  = errors.New("resultado conflitante para a cobrança")
+	ErrWebhookEventReused = errors.New("event_id do webhook já usado em outra cobrança")
+	ErrCheckoutExpired    = errors.New("decisão tomada depois do prazo do checkout")
 	ErrInvalidStockResult = errors.New("pedido.estoque_ok inválido")
 )
 
@@ -32,6 +37,8 @@ type Charge struct {
 	Reason            string
 	CheckoutPublished bool
 	ResultPublished   bool
+	CheckoutEnvelope  string
+	ResultEnvelope    string
 }
 
 // WebhookEvent is the verified body received from the Mock.

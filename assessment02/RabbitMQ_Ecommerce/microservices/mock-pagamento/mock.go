@@ -68,7 +68,12 @@ type charge struct {
 	webhookEventID   string
 	decidedAt        time.Time
 	webhookDelivered bool
+	// rejectedByStore: o MS Pagamento recusou a decisão (prazo vencido).
+	rejectedByStore bool
 }
+
+// errRejectedByStore: o MS Pagamento respondeu 409 (decisão fora do prazo).
+var errRejectedByStore = errors.New("MS Pagamento recusou a decisão")
 
 type Mock struct {
 	options Options
@@ -265,8 +270,12 @@ func (mock *Mock) decide(writer http.ResponseWriter, request *http.Request) {
 
 	case found.webhookDelivered:
 		view := mock.viewOf(found, "")
+		status := http.StatusOK
+		if found.rejectedByStore {
+			status = http.StatusConflict
+		}
 		mock.mu.Unlock()
-		renderPage(writer, http.StatusOK, view)
+		renderPage(writer, status, view)
 		return
 	}
 
@@ -280,7 +289,23 @@ func (mock *Mock) decide(writer http.ResponseWriter, request *http.Request) {
 	webhookURL := found.request.WebhookURL
 	mock.mu.Unlock()
 
-	if err := mock.sendWebhook(request.Context(), webhookURL, payload); err != nil {
+	err := mock.sendWebhook(request.Context(), webhookURL, payload)
+
+	if errors.Is(err, errRejectedByStore) {
+		// A loja (MS Pagamento) é a autoridade do prazo: a recusa é definitiva.
+		log.Printf("[AVISO] Webhook %s recusado pela loja: checkout expirado", payload.EventID)
+
+		mock.mu.Lock()
+		found.webhookDelivered = true
+		found.rejectedByStore = true
+		view := mock.viewOf(found, "")
+		mock.mu.Unlock()
+
+		renderPage(writer, http.StatusConflict, view)
+		return
+	}
+
+	if err != nil {
 		log.Printf("[ERRO] Webhook da cobrança %s: %v", payload.ChargeID, err)
 
 		mock.mu.Lock()
@@ -328,6 +353,10 @@ func (mock *Mock) sendWebhook(
 	}
 	defer response.Body.Close()
 
+	if response.StatusCode == http.StatusConflict {
+		return errRejectedByStore
+	}
+
 	if response.StatusCode < 200 || response.StatusCode > 299 {
 		return fmt.Errorf("MS Pagamento respondeu HTTP %d", response.StatusCode)
 	}
@@ -349,6 +378,7 @@ func (mock *Mock) viewOf(found *charge, message string) pageView {
 		Status:    found.response.Status,
 		Expired:   expired,
 		Pending:   found.response.Status == StatusPending && !expired,
+		Rejected:  found.rejectedByStore,
 		Message:   message,
 	}
 }

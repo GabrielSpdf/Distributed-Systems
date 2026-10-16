@@ -1,8 +1,8 @@
 package msentrega
 
 import (
+	"context"
 	"crypto/rsa"
-	"encoding/json"
 	"fmt"
 	"log"
 
@@ -109,86 +109,46 @@ func InitializeDeliveryService() (
 	return runtime, nil
 }
 
-func HandleDeliveryEvent(
-	envelope events.EventEnvelope,
-	channel *amqp.Channel,
-	privateKey *rsa.PrivateKey,
-) error {
-	var payload events.PaymentResultPayload
-
-	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
-		return fmt.Errorf(
-			"erro ao desserializar pagamento.aprovado: %w",
-			err,
-		)
-	}
-
-	switch envelope.EventType {
-	case events.PaymentApproved:
-		invoiceID := fmt.Sprintf("INV-%s", payload.OrderID)
-		trackingCode := fmt.Sprintf("BR%sBR", payload.OrderID)
-
-		err := PublishOrderShipped(
-			channel,
-			privateKey,
-			payload.OrderID,
-			invoiceID,
-			trackingCode,
-		)
-
-		if err != nil {
-			return fmt.Errorf(
-				"erro ao processar entrega: %w",
-				err,
-			)
-		}
-
-		log.Printf(
-			"[SUCESSO] Entrega do pedido %s realizado com sucesso!",
-			payload.OrderID,
-		)
-
-	default:
-		return fmt.Errorf(
-			"tipo de evento inesperado na Entrega: %s",
-			envelope.EventType,
-		)
-	}
-
-	return nil
+// Signer signs outgoing events as ms-entrega.
+type Signer struct {
+	privateKey *rsa.PrivateKey
 }
 
-func PublishOrderShipped(
-	channel *amqp.Channel,
-	privateKey *rsa.PrivateKey,
-	orderID string,
-	invoiceID string,
-	trackingCode string,
-) error {
-	payload := events.OrderShippedPayload{
-		OrderID:      orderID,
-		InvoiceID:    invoiceID,
-		TrackingCode: trackingCode,
+func NewSigner(privateKey *rsa.PrivateKey) *Signer {
+	return &Signer{
+		privateKey: privateKey,
 	}
+}
 
-	envelope, err := misc.BuildSignedEnvelope(
+func (signer *Signer) Sign(eventType string, payload any) (events.EventEnvelope, error) {
+	return misc.BuildSignedEnvelope(
 		payload,
-		events.OrderShipped,
+		eventType,
 		events.ProducerDelivery,
-		privateKey,
+		signer.privateKey,
 	)
-	if err != nil {
-		return fmt.Errorf("erro ao montar envelope: %w", err)
-	}
+}
 
-	if err := rabbitmq.PublishEvent(
-		channel,
+// ConfirmedPublisher sends envelopes to the eCommerce exchange and waits for
+// the RabbitMQ confirmation.
+type ConfirmedPublisher struct {
+	connection *amqp.Connection
+}
+
+func NewConfirmedPublisher(connection *amqp.Connection) *ConfirmedPublisher {
+	return &ConfirmedPublisher{
+		connection: connection,
+	}
+}
+
+func (publisher *ConfirmedPublisher) Publish(
+	ctx context.Context,
+	envelope events.EventEnvelope,
+) error {
+	return rabbitmq.PublishConfirmed(
+		ctx,
+		publisher.connection,
 		events.ExchangeEcommerce,
-		events.OrderShipped,
 		envelope,
-	); err != nil {
-		return fmt.Errorf("erro ao enviar evento: %w", err)
-	}
-
-	return nil
+	)
 }

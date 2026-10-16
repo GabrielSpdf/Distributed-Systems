@@ -331,3 +331,163 @@ func TestReserveRejectsInvalidOrder(t *testing.T) {
 		t.Fatalf("esperava ErrInvalidOrder, recebeu %v", err)
 	}
 }
+
+func TestReserveKeepsOriginalShortfallsAfterRestock(t *testing.T) {
+	repository, pool := openTestRepository(t)
+	fixture := seedStock(t, pool)
+	ctx := context.Background()
+	orderID := fixture.orders + "5"
+	items := []ReservationItem{{ProductID: fixture.productB, Quantity: 3}}
+
+	if _, err := repository.Reserve(ctx, orderID, items); err != nil {
+		t.Fatalf("erro ao reservar: %v", err)
+	}
+
+	if _, err := pool.Exec(ctx, "UPDATE estoque.products SET quantity = 10 WHERE id = $1", fixture.productB); err != nil {
+		t.Fatalf("erro ao repor estoque: %v", err)
+	}
+
+	again, err := repository.Reserve(ctx, orderID, items)
+	if err != nil {
+		t.Fatalf("erro na repetição: %v", err)
+	}
+
+	if again.Status != ReservationUnavailable || len(again.Shortfalls) != 1 ||
+		again.Shortfalls[0].RequestedQuantity != 3 || again.Shortfalls[0].AvailableQuantity != 2 {
+		t.Fatalf("resultado original não foi preservado após reposição: %+v", again)
+	}
+
+	if quantityOf(t, pool, fixture.productB) != 10 {
+		t.Fatal("repetição de pedido indisponível alterou o estoque")
+	}
+}
+
+func TestResultEnvelopeFirstWriterWins(t *testing.T) {
+	repository, pool := openTestRepository(t)
+	fixture := seedStock(t, pool)
+	ctx := context.Background()
+	orderID := fixture.orders + "6"
+	items := []ReservationItem{{ProductID: fixture.productA, Quantity: 1}}
+
+	if _, err := repository.Reserve(ctx, orderID, items); err != nil {
+		t.Fatalf("erro ao reservar: %v", err)
+	}
+
+	stored, err := repository.SaveResultEnvelope(ctx, orderID, `{"event_id":"primeiro"}`)
+	if err != nil || stored != `{"event_id":"primeiro"}` {
+		t.Fatalf("primeiro envelope não gravado: %q %v", stored, err)
+	}
+
+	stored, err = repository.SaveResultEnvelope(ctx, orderID, `{"event_id":"segundo"}`)
+	if err != nil || stored != `{"event_id":"primeiro"}` {
+		t.Fatalf("segundo envelope substituiu o primeiro: %q %v", stored, err)
+	}
+
+	again, err := repository.Reserve(ctx, orderID, items)
+	if err != nil || again.Envelope != `{"event_id":"primeiro"}` || again.Published {
+		t.Fatalf("reserva repetida sem o envelope gravado: %+v %v", again, err)
+	}
+}
+
+func TestPendingResultsUntilPublished(t *testing.T) {
+	repository, pool := openTestRepository(t)
+	fixture := seedStock(t, pool)
+	ctx := context.Background()
+	reserved := fixture.orders + "7"
+	released := fixture.orders + "8"
+	items := []ReservationItem{{ProductID: fixture.productA, Quantity: 1}}
+
+	for _, orderID := range []string{reserved, released} {
+		if _, err := repository.Reserve(ctx, orderID, items); err != nil {
+			t.Fatalf("erro ao reservar: %v", err)
+		}
+		if _, err := repository.SaveResultEnvelope(ctx, orderID, `{"event_id":"`+orderID+`"}`); err != nil {
+			t.Fatalf("erro ao gravar envelope: %v", err)
+		}
+	}
+
+	if _, err := repository.Release(ctx, released); err != nil {
+		t.Fatalf("erro ao liberar: %v", err)
+	}
+
+	isPending := func(orderID string) bool {
+		pending, err := repository.ListPendingResults(ctx, 0, 1000)
+		if err != nil {
+			t.Fatalf("erro ao listar pendências: %v", err)
+		}
+		for _, result := range pending {
+			if result.OrderID == orderID {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !isPending(reserved) {
+		t.Fatal("resultado não publicado não aparece como pendente")
+	}
+
+	if isPending(released) {
+		t.Fatal("pedido já liberado não deve ter resultado reenviado")
+	}
+
+	if err := repository.MarkResultPublished(ctx, reserved); err != nil {
+		t.Fatalf("erro ao marcar publicação: %v", err)
+	}
+
+	if isPending(reserved) {
+		t.Fatal("resultado publicado continua pendente")
+	}
+
+	again, err := repository.Reserve(ctx, reserved, items)
+	if err != nil || !again.Published {
+		t.Fatalf("reserva repetida não indica publicação: %+v %v", again, err)
+	}
+}
+
+func TestSaveResultEnvelopeConcurrentWriterGetsStoredEnvelope(t *testing.T) {
+	repository, pool := openTestRepository(t)
+	fixture := seedStock(t, pool)
+	ctx := context.Background()
+	orderID := fixture.orders + "9"
+
+	if _, err := repository.Reserve(ctx, orderID, []ReservationItem{{ProductID: fixture.productA, Quantity: 1}}); err != nil {
+		t.Fatalf("erro ao reservar: %v", err)
+	}
+
+	// Primeiro gravador segura a linha sem confirmar.
+	first, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Rollback(ctx)
+
+	if _, err := first.Exec(ctx,
+		"UPDATE estoque.stock_reservations SET result_envelope = $2 WHERE order_id = $1 AND result_envelope IS NULL",
+		orderID, `{"event_id":"primeiro"}`,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	type result struct {
+		stored string
+		err    error
+	}
+	done := make(chan result, 1)
+
+	go func() {
+		stored, err := repository.SaveResultEnvelope(ctx, orderID, `{"event_id":"segundo"}`)
+		done <- result{stored, err}
+	}()
+
+	time.Sleep(300 * time.Millisecond)
+
+	if err := first.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	got := <-done
+	if got.err != nil || got.stored != `{"event_id":"primeiro"}` {
+		t.Fatalf("segundo gravador deveria receber o envelope já gravado: %q %v", got.stored, got.err)
+	}
+}

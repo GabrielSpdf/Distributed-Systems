@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"RabbitMQ_Ecommerce/utils/events"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -37,7 +39,9 @@ const chargeColumns = `
 	processed_at,
 	COALESCE(reason, ''),
 	checkout_published_at IS NOT NULL,
-	result_published_at IS NOT NULL
+	result_published_at IS NOT NULL,
+	COALESCE(checkout_envelope, ''),
+	COALESCE(result_envelope, '')
 `
 
 func scanCharge(row pgx.Row) (Charge, error) {
@@ -60,6 +64,8 @@ func scanCharge(row pgx.Row) (Charge, error) {
 		&charge.Reason,
 		&charge.CheckoutPublished,
 		&charge.ResultPublished,
+		&charge.CheckoutEnvelope,
+		&charge.ResultEnvelope,
 	)
 	if err != nil {
 		return Charge{}, err
@@ -206,6 +212,12 @@ func (repository *Repository) ApplyWebhook(
 		return WebhookOutcome{}, ErrConflictingResult
 	}
 
+	// Uma decisão posterior ao prazo não vale, mesmo que a expiração ainda
+	// não tenha sido gravada.
+	if charge.Status == ChargePending && !charge.ExpiresAt.IsZero() && event.OccurredAt.After(charge.ExpiresAt) {
+		return WebhookOutcome{}, ErrCheckoutExpired
+	}
+
 	tag, err := tx.Exec(
 		ctx,
 		`INSERT INTO pagamento.webhook_events (external_event_id, charge_id)
@@ -216,6 +228,25 @@ func (repository *Repository) ApplyWebhook(
 	)
 	if err != nil {
 		return WebhookOutcome{}, fmt.Errorf("erro ao registrar webhook: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		// Um event_id já gravado só é repetição se for da mesma cobrança.
+		var ownerChargeID string
+
+		if err := tx.QueryRow(
+			ctx,
+			`SELECT charge_id::text
+			   FROM pagamento.webhook_events
+			  WHERE external_event_id = $1`,
+			event.EventID,
+		).Scan(&ownerChargeID); err != nil {
+			return WebhookOutcome{}, fmt.Errorf("erro ao consultar webhook repetido: %w", err)
+		}
+
+		if ownerChargeID != charge.ID {
+			return WebhookOutcome{}, ErrWebhookEventReused
+		}
 	}
 
 	if tag.RowsAffected() == 0 || charge.Status == event.Status {
@@ -249,4 +280,168 @@ func (repository *Repository) ApplyWebhook(
 	}
 
 	return WebhookOutcome{Charge: charge}, nil
+}
+
+func (repository *Repository) SaveCheckoutEnvelope(ctx context.Context, chargeID string, envelope string) (string, error) {
+	return repository.saveEnvelope(ctx, chargeID, "checkout_envelope", envelope)
+}
+
+func (repository *Repository) SaveResultEnvelope(ctx context.Context, chargeID string, envelope string) (string, error) {
+	return repository.saveEnvelope(ctx, chargeID, "result_envelope", envelope)
+}
+
+// saveEnvelope stores a signed event once: the first envelope saved wins, so
+// every resend uses the same event_id. Column receives only the two names
+// above, never user input.
+func (repository *Repository) saveEnvelope(
+	ctx context.Context,
+	chargeID string,
+	column string,
+	envelope string,
+) (string, error) {
+	var stored string
+
+	err := repository.pool.QueryRow(
+		ctx,
+		// COALESCE mantém o envelope já gravado; um segundo gravador concorrente
+		// espera o lock, relê a linha e recebe o envelope do primeiro.
+		`UPDATE pagamento.payment_charges
+		    SET `+column+` = COALESCE(`+column+`, $2),
+		        updated_at = CASE WHEN `+column+` IS NULL THEN NOW() ELSE updated_at END
+		  WHERE id = $1::uuid
+		  RETURNING `+column,
+		chargeID,
+		envelope,
+	).Scan(&stored)
+	if err != nil {
+		return "", fmt.Errorf("erro ao gravar %s da cobrança %s: %w", column, chargeID, err)
+	}
+
+	return stored, nil
+}
+
+// ListPendingCheckouts returns charges whose checkout event was not confirmed
+// by the broker.
+func (repository *Repository) ListPendingCheckouts(
+	ctx context.Context,
+	minimumAge time.Duration,
+	limit int,
+) ([]Charge, error) {
+	return repository.listCharges(ctx, `
+		checkout_published_at IS NULL
+	`, minimumAge, limit)
+}
+
+// ListPendingResults returns decided charges whose result event was not
+// confirmed by the broker. The checkout goes first, so it must be published.
+func (repository *Repository) ListPendingResults(
+	ctx context.Context,
+	minimumAge time.Duration,
+	limit int,
+) ([]Charge, error) {
+	return repository.listCharges(ctx, `
+		status <> 'PENDING'
+		AND checkout_published_at IS NOT NULL
+		AND result_published_at IS NULL
+	`, minimumAge, limit)
+}
+
+// listCharges receives only the fixed conditions above, never user input.
+func (repository *Repository) listCharges(
+	ctx context.Context,
+	condition string,
+	minimumAge time.Duration,
+	limit int,
+) ([]Charge, error) {
+	rows, err := repository.pool.Query(
+		ctx,
+		`SELECT `+chargeColumns+`
+		   FROM pagamento.payment_charges
+		  WHERE `+condition+`
+		    AND updated_at <= NOW() - $1::interval
+		  ORDER BY updated_at
+		  LIMIT $2`,
+		minimumAge,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao consultar cobranças pendentes: %w", err)
+	}
+	defer rows.Close()
+
+	charges := make([]Charge, 0)
+
+	for rows.Next() {
+		charge, err := scanCharge(rows)
+		if err != nil {
+			return nil, fmt.Errorf("erro ao ler cobrança pendente: %w", err)
+		}
+		charges = append(charges, charge)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("erro durante leitura das cobranças pendentes: %w", err)
+	}
+
+	return charges, nil
+}
+
+// ExpireNextCharge marks one overdue PENDING charge as EXPIRED. The row lock
+// makes the expiry and a concurrent webhook exclusive: whichever locks the
+// charge first decides it. grace gives in-flight webhooks decided before the
+// deadline a moment to arrive.
+func (repository *Repository) ExpireNextCharge(
+	ctx context.Context,
+	grace time.Duration,
+) (Charge, bool, error) {
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return Charge{}, false, fmt.Errorf("erro ao iniciar expiração: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var chargeID string
+
+	err = tx.QueryRow(
+		ctx,
+		`SELECT id::text
+		   FROM pagamento.payment_charges
+		  WHERE status = $1
+		    AND expires_at <= NOW() - $2::interval
+		  ORDER BY expires_at, id
+		  LIMIT 1
+		    FOR UPDATE SKIP LOCKED`,
+		ChargePending,
+		grace,
+	).Scan(&chargeID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Charge{}, false, nil
+	}
+
+	if err != nil {
+		return Charge{}, false, fmt.Errorf("erro ao selecionar cobrança vencida: %w", err)
+	}
+
+	charge, err := scanCharge(tx.QueryRow(
+		ctx,
+		`UPDATE pagamento.payment_charges
+		    SET status = $2,
+		        processed_at = NOW(),
+		        reason = $3,
+		        updated_at = NOW()
+		  WHERE id = $1::uuid
+		  RETURNING `+chargeColumns,
+		chargeID,
+		ChargeExpired,
+		events.ReasonCheckoutExpired,
+	))
+	if err != nil {
+		return Charge{}, false, fmt.Errorf("erro ao expirar cobrança: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Charge{}, false, fmt.Errorf("erro ao confirmar expiração: %w", err)
+	}
+
+	return charge, true, nil
 }

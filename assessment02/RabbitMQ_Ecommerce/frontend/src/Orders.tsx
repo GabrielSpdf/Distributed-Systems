@@ -450,6 +450,17 @@ function Orders({ refreshKey }: OrdersProps) {
                 </p>
               )}
 
+              {order.tracking_code && (
+                <p className="cart-feedback">
+                  Enviado
+                  {order.shipped_at && Number.isFinite(Date.parse(order.shipped_at))
+                    ? ` em ${dateFormat.format(new Date(order.shipped_at))}`
+                    : ''}
+                  {' · '}Nota fiscal {order.invoice_id}
+                  {' · '}Rastreio <strong>{order.tracking_code}</strong>
+                </p>
+              )}
+
               {detailsOrderID === order.id && loadingDetails && (
                 <p className="cart-feedback" role="status">
                   Consultando detalhes...

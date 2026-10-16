@@ -45,6 +45,9 @@ type Order struct {
 	Currency          string          `json:"currency"`
 	CheckoutURL       string          `json:"checkout_url,omitempty"`
 	CheckoutExpiresAt *time.Time      `json:"checkout_expires_at,omitempty"`
+	InvoiceID         string          `json:"invoice_id,omitempty"`
+	TrackingCode      string          `json:"tracking_code,omitempty"`
+	ShippedAt         *time.Time      `json:"shipped_at,omitempty"`
 	CreatedAt         time.Time       `json:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at"`
 	Links             map[string]Link `json:"_links"`

@@ -1,10 +1,10 @@
 package mspagamento
 
 import (
+	"context"
 	"crypto/rsa"
 	"fmt"
 	"log"
-	"sync"
 
 	"RabbitMQ_Ecommerce/utils/cryptography"
 	"RabbitMQ_Ecommerce/utils/events"
@@ -110,50 +110,39 @@ func InitializePaymentService() (
 	return runtime, nil
 }
 
-// SignedPublisher signs each event as ms-pagamento and sends it to the
-// eCommerce exchange. The consumer and the webhook handlers share the channel,
-// so publications are serialized.
-type SignedPublisher struct {
-	mu         sync.Mutex
-	channel    *amqp.Channel
+// ConfirmedEventBus signs events as ms-pagamento and publishes them to the
+// eCommerce exchange, waiting for the RabbitMQ confirmation. Each publication
+// uses its own channel, so the consumer and the webhook requests can publish
+// at the same time.
+type ConfirmedEventBus struct {
+	connection *amqp.Connection
 	privateKey *rsa.PrivateKey
 }
 
-func NewSignedPublisher(
-	channel *amqp.Channel,
+func NewConfirmedEventBus(
+	connection *amqp.Connection,
 	privateKey *rsa.PrivateKey,
-) *SignedPublisher {
-	return &SignedPublisher{
-		channel:    channel,
+) *ConfirmedEventBus {
+	return &ConfirmedEventBus{
+		connection: connection,
 		privateKey: privateKey,
 	}
 }
 
-func (publisher *SignedPublisher) Publish(
-	eventType string,
-	payload any,
-) error {
-	envelope, err := misc.BuildSignedEnvelope(
+func (bus *ConfirmedEventBus) Sign(eventType string, payload any) (events.EventEnvelope, error) {
+	return misc.BuildSignedEnvelope(
 		payload,
 		eventType,
 		events.ProducerPayment,
-		publisher.privateKey,
+		bus.privateKey,
 	)
-	if err != nil {
-		return fmt.Errorf("erro ao montar envelope: %w", err)
-	}
+}
 
-	publisher.mu.Lock()
-	defer publisher.mu.Unlock()
-
-	if err := rabbitmq.PublishEvent(
-		publisher.channel,
+func (bus *ConfirmedEventBus) Publish(ctx context.Context, envelope events.EventEnvelope) error {
+	return rabbitmq.PublishConfirmed(
+		ctx,
+		bus.connection,
 		events.ExchangeEcommerce,
-		eventType,
 		envelope,
-	); err != nil {
-		return fmt.Errorf("erro ao enviar evento: %w", err)
-	}
-
-	return nil
+	)
 }

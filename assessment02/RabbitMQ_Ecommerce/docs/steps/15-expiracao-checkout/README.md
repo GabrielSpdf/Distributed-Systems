@@ -126,3 +126,11 @@ sobre a autoridade da expiração e o tratamento de resultados atrasados.
 
 Esta etapa cobre a demonstração acadêmica com serviços saudáveis, expiração,
 outbox, liberação de estoque e SSE. Entrega permanece fora do escopo.
+
+## Atualização (Etapa 17)
+
+O MS Pagamento passou a ser a autoridade do prazo e expira a cobrança cerca de
+5 s após `expires_at`, publicando `pagamento.recusado` com
+`CHECKOUT_EXPIRED`; o Gateway cancela o pedido ao receber esse evento. A margem
+deste executor passou de 30 s para 10 minutos: ele só age se o Pagamento estiver
+fora do ar. Detalhes na [Etapa 17](../17-confiabilidade-expiracao/README.md).

@@ -149,6 +149,9 @@ export type Order = {
   currency: string
   checkout_url?: string
   checkout_expires_at?: string
+  invoice_id?: string
+  tracking_code?: string
+  shipped_at?: string
   created_at: string
   updated_at: string
   _links: Record<string, OrderLink>
@@ -193,6 +196,7 @@ export type PromotionCategory =
 
 export type PromotionInterestsResponse = {
   categories: PromotionCategory[]
+  email: string
 }
 
 export function getPromotionInterests(): Promise<PromotionInterestsResponse> {
@@ -204,11 +208,12 @@ export function getPromotionInterests(): Promise<PromotionInterestsResponse> {
 
 export function subscribePromotionInterests(
   categories: PromotionCategory[],
+  email?: string,
 ): Promise<{ changed: boolean }> {
   return request<{ changed: boolean }>(
     '/api/promotion-interests',
     'POST',
-    { categories },
+    email ? { categories, email } : { categories },
   )
 }
 

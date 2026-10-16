@@ -2,6 +2,7 @@ package msestoque
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -107,18 +108,22 @@ func (repository *Repository) Reserve(
 	defer tx.Rollback(ctx)
 
 	var (
-		existingStatus string
-		createdAt      time.Time
+		existingStatus   string
+		createdAt        time.Time
+		storedShortfalls *string
+		storedEnvelope   *string
+		published        bool
 	)
 
 	err = tx.QueryRow(
 		ctx,
-		`SELECT status, created_at
+		`SELECT status, created_at, shortfalls, result_envelope,
+		        result_published_at IS NOT NULL
 		   FROM estoque.stock_reservations
 		  WHERE order_id = $1
 		    FOR UPDATE`,
 		orderID,
-	).Scan(&existingStatus, &createdAt)
+	).Scan(&existingStatus, &createdAt, &storedShortfalls, &storedEnvelope, &published)
 
 	alreadyProcessed := err == nil
 
@@ -126,11 +131,30 @@ func (repository *Repository) Reserve(
 		return ReservationResult{}, fmt.Errorf("erro ao consultar reserva: %w", err)
 	}
 
-	if alreadyProcessed && existingStatus != ReservationUnavailable {
-		return ReservationResult{
+	if alreadyProcessed {
+		stored := ReservationResult{
 			Status:     existingStatus,
 			ReservedAt: createdAt.UTC(),
-		}, nil
+			Published:  published,
+		}
+
+		if storedEnvelope != nil {
+			stored.Envelope = *storedEnvelope
+		}
+
+		if existingStatus != ReservationUnavailable {
+			return stored, nil
+		}
+
+		// O resultado original nunca é recalculado: as faltas gravadas valem
+		// mesmo que o estoque tenha sido reposto depois.
+		if storedShortfalls != nil {
+			if err := json.Unmarshal([]byte(*storedShortfalls), &stored.Shortfalls); err != nil {
+				return ReservationResult{}, fmt.Errorf("erro ao ler faltas gravadas: %w", err)
+			}
+
+			return stored, nil
+		}
 	}
 
 	available, err := lockProducts(ctx, tx, requested)
@@ -141,19 +165,27 @@ func (repository *Repository) Reserve(
 	shortfalls := findShortfalls(requested, available)
 
 	if alreadyProcessed {
+		// Linhas anteriores à migration 014 não guardam as faltas.
 		return ReservationResult{
 			Status:     ReservationUnavailable,
 			Shortfalls: shortfalls,
+			Published:  published,
 		}, nil
 	}
 
 	if len(shortfalls) > 0 {
+		encodedShortfalls, err := json.Marshal(shortfalls)
+		if err != nil {
+			return ReservationResult{}, fmt.Errorf("erro ao serializar faltas: %w", err)
+		}
+
 		if _, err := tx.Exec(
 			ctx,
-			`INSERT INTO estoque.stock_reservations (order_id, status)
-			 VALUES ($1, $2)`,
+			`INSERT INTO estoque.stock_reservations (order_id, status, shortfalls)
+			 VALUES ($1, $2, $3)`,
 			orderID,
 			ReservationUnavailable,
+			string(encodedShortfalls),
 		); err != nil {
 			return ReservationResult{}, fmt.Errorf("erro ao registrar indisponibilidade: %w", err)
 		}
@@ -357,4 +389,90 @@ func (repository *Repository) Release(
 	}
 
 	return ReservationReleased, nil
+}
+
+// SaveResultEnvelope stores the signed result event of an order. The first
+// envelope saved wins, so every resend uses the same event_id; the stored one
+// is returned.
+func (repository *Repository) SaveResultEnvelope(
+	ctx context.Context,
+	orderID string,
+	envelope string,
+) (string, error) {
+	var stored string
+
+	err := repository.pool.QueryRow(
+		ctx,
+		// COALESCE mantém o envelope já gravado; um segundo gravador concorrente
+		// espera o lock, relê a linha e recebe o envelope do primeiro.
+		`UPDATE estoque.stock_reservations
+		    SET result_envelope = COALESCE(result_envelope, $2),
+		        updated_at = CASE WHEN result_envelope IS NULL THEN NOW() ELSE updated_at END
+		  WHERE order_id = $1
+		  RETURNING result_envelope`,
+		orderID,
+		envelope,
+	).Scan(&stored)
+	if err != nil {
+		return "", fmt.Errorf("erro ao gravar resultado do pedido %s: %w", orderID, err)
+	}
+
+	return stored, nil
+}
+
+func (repository *Repository) MarkResultPublished(ctx context.Context, orderID string) error {
+	if _, err := repository.pool.Exec(
+		ctx,
+		`UPDATE estoque.stock_reservations
+		    SET result_published_at = COALESCE(result_published_at, NOW())
+		  WHERE order_id = $1`,
+		orderID,
+	); err != nil {
+		return fmt.Errorf("erro ao marcar publicação do pedido %s: %w", orderID, err)
+	}
+
+	return nil
+}
+
+// ListPendingResults returns stored result events not confirmed by the broker,
+// older than minimumAge. Released orders are skipped: their result no longer
+// matters to the Gateway.
+func (repository *Repository) ListPendingResults(
+	ctx context.Context,
+	minimumAge time.Duration,
+	limit int,
+) ([]PendingResult, error) {
+	rows, err := repository.pool.Query(
+		ctx,
+		`SELECT order_id, result_envelope
+		   FROM estoque.stock_reservations
+		  WHERE result_envelope IS NOT NULL
+		    AND result_published_at IS NULL
+		    AND status IN ('RESERVED', 'UNAVAILABLE')
+		    AND updated_at <= NOW() - $1::interval
+		  ORDER BY updated_at
+		  LIMIT $2`,
+		minimumAge,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao consultar resultados pendentes: %w", err)
+	}
+	defer rows.Close()
+
+	pending := make([]PendingResult, 0)
+
+	for rows.Next() {
+		var result PendingResult
+		if err := rows.Scan(&result.OrderID, &result.Envelope); err != nil {
+			return nil, fmt.Errorf("erro ao ler resultado pendente: %w", err)
+		}
+		pending = append(pending, result)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("erro durante leitura dos resultados pendentes: %w", err)
+	}
+
+	return pending, nil
 }

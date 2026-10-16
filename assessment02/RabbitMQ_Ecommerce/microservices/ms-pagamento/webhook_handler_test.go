@@ -16,6 +16,8 @@ import (
 const webhookSecret = "segredo-do-webhook-com-mais-de-32-bytes"
 
 type stubResultStore struct {
+	stubOutboxStore
+
 	outcome      WebhookOutcome
 	applyErr     error
 	applyCalls   int
@@ -69,7 +71,7 @@ func decidedCharge(status string, reason string) Charge {
 
 func postWebhook(
 	store ResultStore,
-	publisher EventPublisher,
+	publisher EventBus,
 	body string,
 	signature string,
 ) *httptest.ResponseRecorder {
@@ -248,16 +250,94 @@ func TestWebhookDuplicateNotYetPublishedIsPublished(t *testing.T) {
 	}
 }
 
-func TestWebhookPublishFailureAsksForRetry(t *testing.T) {
+func TestWebhookPublishFailureKeepsResultPending(t *testing.T) {
 	store := &stubResultStore{outcome: WebhookOutcome{Charge: decidedCharge(ChargeApproved, "")}}
 	body := webhookJSON(ChargeApproved)
 
+	// Resultado e envelope gravados: o webhook está processado e a rotina de
+	// pendências reenvia o evento.
 	recorder := postWebhook(store, &stubPublisher{err: errors.New("broker fora do ar")}, body, signed(body))
-	if recorder.Code != http.StatusInternalServerError {
-		t.Fatalf("esperava 500, recebeu %d", recorder.Code)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("esperava 204, recebeu %d", recorder.Code)
+	}
+
+	if len(store.resultEnvelopes) != 1 {
+		t.Fatal("envelope do resultado não foi gravado")
 	}
 
 	if len(store.markedResult) != 0 {
 		t.Fatal("resultado marcado como publicado sem publicação")
+	}
+}
+
+func TestWebhookRejectsEventReusedForAnotherCharge(t *testing.T) {
+	publisher := &stubPublisher{}
+	body := webhookJSON(ChargeApproved)
+
+	recorder := postWebhook(&stubResultStore{applyErr: ErrWebhookEventReused}, publisher, body, signed(body))
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("esperava 409, recebeu %d", recorder.Code)
+	}
+
+	if publisher.calls != 0 {
+		t.Fatal("evento reutilizado gerou publicação")
+	}
+}
+
+func TestWebhookNeverPublishesUndecidedCharge(t *testing.T) {
+	store := &stubResultStore{outcome: WebhookOutcome{
+		Charge:    Charge{ID: testChargeID, OrderID: "PED-001", Status: ChargePending},
+		Duplicate: true,
+	}}
+	publisher := &stubPublisher{}
+	body := webhookJSON(ChargeApproved)
+
+	recorder := postWebhook(store, publisher, body, signed(body))
+	if recorder.Code == http.StatusNoContent || publisher.calls != 0 {
+		t.Fatalf("cobrança pendente publicada: %d %d", recorder.Code, publisher.calls)
+	}
+}
+
+func TestWebhookResendsStoredResultEnvelope(t *testing.T) {
+	charge := decidedCharge(ChargeApproved, "")
+	charge.ResultEnvelope = storedPaymentEnvelope(t, "resultado-original", events.PaymentApproved)
+
+	store := &stubResultStore{outcome: WebhookOutcome{Charge: charge, Duplicate: true}}
+	publisher := &stubPublisher{}
+	body := webhookJSON(ChargeApproved)
+
+	recorder := postWebhook(store, publisher, body, signed(body))
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("esperava 204, recebeu %d", recorder.Code)
+	}
+
+	if publisher.signs != 0 || len(publisher.published) != 1 || publisher.published[0].EventID != "resultado-original" {
+		t.Fatalf("esperava reenviar o envelope gravado: assinaturas=%d %+v", publisher.signs, publisher.published)
+	}
+}
+
+func TestWebhookEnvelopeStorageFailureAsksForRetry(t *testing.T) {
+	store := &stubResultStore{outcome: WebhookOutcome{Charge: decidedCharge(ChargeApproved, "")}}
+	store.saveEnvelopeErr = errors.New("banco fora do ar")
+	publisher := &stubPublisher{}
+	body := webhookJSON(ChargeApproved)
+
+	recorder := postWebhook(store, publisher, body, signed(body))
+	if recorder.Code != http.StatusInternalServerError || publisher.calls != 0 {
+		t.Fatalf("sem envelope gravado o Mock deve tentar de novo: %d %d", recorder.Code, publisher.calls)
+	}
+}
+
+func TestWebhookAfterDeadlineGets409(t *testing.T) {
+	publisher := &stubPublisher{}
+	body := webhookJSON(ChargeApproved)
+
+	recorder := postWebhook(&stubResultStore{applyErr: ErrCheckoutExpired}, publisher, body, signed(body))
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), `"code":"CHECKOUT_EXPIRED"`) {
+		t.Fatalf("esperava 409 CHECKOUT_EXPIRED: %d %s", recorder.Code, recorder.Body.String())
+	}
+
+	if publisher.calls != 0 {
+		t.Fatal("webhook após o prazo gerou publicação")
 	}
 }

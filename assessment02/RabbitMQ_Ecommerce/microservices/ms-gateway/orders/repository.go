@@ -157,6 +157,9 @@ func (repository *Repository) ListByUser(
 			total::double precision,
 			COALESCE(checkout_url, ''),
 			checkout_expires_at,
+			COALESCE(invoice_id, ''),
+			COALESCE(tracking_code, ''),
+			shipped_at,
 			created_at,
 			updated_at
 		FROM gateway.orders
@@ -188,6 +191,9 @@ func (repository *Repository) ListByUser(
 			&order.Total,
 			&order.CheckoutURL,
 			&order.CheckoutExpiresAt,
+			&order.InvoiceID,
+			&order.TrackingCode,
+			&order.ShippedAt,
 			&order.CreatedAt,
 			&order.UpdatedAt,
 		)
@@ -280,6 +286,9 @@ func (repository *Repository) FindByID(
 			total::double precision,
 			COALESCE(checkout_url, ''),
 			checkout_expires_at,
+			COALESCE(invoice_id, ''),
+			COALESCE(tracking_code, ''),
+			shipped_at,
 			created_at,
 			updated_at
 		FROM gateway.orders
@@ -306,6 +315,9 @@ func (repository *Repository) FindByID(
 		&order.Total,
 		&order.CheckoutURL,
 		&order.CheckoutExpiresAt,
+		&order.InvoiceID,
+		&order.TrackingCode,
+		&order.ShippedAt,
 		&order.CreatedAt,
 		&order.UpdatedAt,
 	)

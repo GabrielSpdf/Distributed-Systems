@@ -377,3 +377,24 @@ func TestUnknownDecisionReturnsNotFound(t *testing.T) {
 		t.Fatalf("esperava 404, recebeu %d", recorder.Code)
 	}
 }
+
+func TestStoreRejectionAfterDeadlineIsFinal(t *testing.T) {
+	receiver := newWebhookReceiver(t, http.StatusConflict)
+	instance := newTestMock(t)
+	charge := instance.createCharge(t, "PED-001", receiver.server.URL)
+
+	first := instance.do(http.MethodPost, "/checkout/"+charge.ChargeID+"/approve", "", nil)
+	if first.Code != http.StatusConflict || !strings.Contains(first.Body.String(), "A loja não aceitou o pagamento") {
+		t.Fatalf("esperava 409 com aviso de recusa da loja: %d %s", first.Code, first.Body.String())
+	}
+
+	second := instance.do(http.MethodPost, "/checkout/"+charge.ChargeID+"/approve", "", nil)
+	if receiver.calls() != 1 || !strings.Contains(second.Body.String(), "A loja não aceitou o pagamento") {
+		t.Fatalf("recusa da loja deveria ser definitiva: chamadas=%d %s", receiver.calls(), second.Body.String())
+	}
+
+	page := instance.do(http.MethodGet, "/checkout/"+charge.ChargeID, "", nil)
+	if strings.Contains(page.Body.String(), "Pagamento aprovado") {
+		t.Fatal("página não pode dizer que o pagamento foi aprovado")
+	}
+}

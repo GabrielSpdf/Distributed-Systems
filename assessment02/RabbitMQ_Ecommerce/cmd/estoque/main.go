@@ -53,11 +53,15 @@ func run() error {
 
 	eventHandler := msestoque.NewEventHandler(
 		repository,
-		msestoque.NewSignedPublisher(
-			stockService.Channel,
-			stockService.PrivateKey,
-		),
+		msestoque.NewSigner(stockService.PrivateKey),
+		msestoque.NewConfirmedPublisher(stockService.Connection),
 	)
+
+	pendingContext, cancelPending := context.WithCancel(context.Background())
+	defer cancelPending()
+
+	// Reenvia resultados gravados cuja publicação não foi confirmada.
+	go eventHandler.RunPendingPublisher(pendingContext, 10*time.Second)
 
 	server := &http.Server{
 		Addr:              ":" + configuration.StockPort,
@@ -76,11 +80,13 @@ func run() error {
 
 	consumerErrors := make(chan error, 1)
 	go func() {
-		consumerErrors <- rabbitmq.ConsumeSignedEvents(
+		consumerErrors <- rabbitmq.ConsumeSignedEventsReliably(
+			stockService.Connection,
 			stockService.Channel,
 			stockService.QueueName,
 			stockService.PublicKeys,
 			eventHandler.Handle,
+			rabbitmq.RetryOptions{},
 		)
 	}()
 

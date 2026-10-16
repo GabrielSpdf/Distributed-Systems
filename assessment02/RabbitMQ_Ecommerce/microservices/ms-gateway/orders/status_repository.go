@@ -92,6 +92,14 @@ func (repository *Repository) applyStatusEventTx(
 		return false, fmt.Errorf("%w: %v", ErrStatusTransition, err)
 	}
 
+	// O MS Pagamento é a autoridade do prazo do checkout: uma recusa com
+	// motivo CHECKOUT_EXPIRED cancela o pedido em vez de marcar recusa.
+	compensationReason := events.ReasonPaymentRefused
+	if isCheckoutExpiredRefusal(eventType, event) {
+		nextStatus = StatusCancelled
+		compensationReason = events.ReasonCheckoutExpired
+	}
+
 	if event.StockConfirmed != nil &&
 		!matchesTotalCents(event.StockConfirmed.Total, totalCents) {
 		return false, fmt.Errorf(
@@ -201,7 +209,7 @@ func (repository *Repository) applyStatusEventTx(
 			events.WebOrderDeletedPayload{
 				OrderID:     event.OrderID,
 				CustomerID:  userID,
-				Reason:      events.ReasonPaymentRefused,
+				Reason:      compensationReason,
 				CancelledAt: updatedAt.UTC(),
 			},
 		)

@@ -47,6 +47,14 @@ descritas na [Etapa 15](../15-expiracao-checkout/README.md). Entrega continua co
 Gabriel. A dupla ainda deve combinar manutenção e apresentação de Pagamento/Mock.
 A revisão de responsabilidade sobre promoções continua válida.
 
+Atualização em 15/10/2026 (Etapa 17): Lucas delegou a Gabriel as decisões das
+pendências de integração. Gabriel implementou o consumidor confiável, a
+publicação confirmada em Estoque, Pagamento e Entrega, a autoridade do prazo no
+MS Pagamento e ajustes pontuais no Gateway e no frontend (cancelamento por
+`CHECKOUT_EXPIRED`, margem de segurança de 10 min, rastreio no pedido, e-mail
+na inscrição). A apresentação não é dividida por pessoa: os dois explicam todo
+o código.
+
 ---
 
 ## Lucas - Frontend e API Gateway

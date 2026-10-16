@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"RabbitMQ_Ecommerce/utils/events"
+	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
 
 const (
@@ -18,9 +19,9 @@ const (
 
 // CheckoutStore is what the event handler needs from the database.
 type CheckoutStore interface {
+	OutboxStore
 	FindChargeByOrder(ctx context.Context, orderID string) (Charge, bool, error)
 	SaveCharge(ctx context.Context, charge Charge) (Charge, error)
-	MarkCheckoutPublished(ctx context.Context, chargeID string) error
 }
 
 // ChargeCreator creates charges in the Mock de Pagamento.
@@ -28,36 +29,33 @@ type ChargeCreator interface {
 	CreateCharge(ctx context.Context, orderID string, amount float64, currency string) (MockCharge, error)
 }
 
-// EventPublisher sends one event to RabbitMQ.
-type EventPublisher interface {
-	Publish(eventType string, payload any) error
-}
-
 type EventHandler struct {
-	store     CheckoutStore
-	creator   ChargeCreator
-	publisher EventPublisher
+	store   CheckoutStore
+	creator ChargeCreator
+	outbox  *Outbox
 }
 
 func NewEventHandler(
 	store CheckoutStore,
 	creator ChargeCreator,
-	publisher EventPublisher,
+	bus EventBus,
 ) *EventHandler {
 	return &EventHandler{
-		store:     store,
-		creator:   creator,
-		publisher: publisher,
+		store:   store,
+		creator: creator,
+		outbox:  NewOutbox(store, bus),
 	}
 }
 
-// Handle processes one verified envelope. A nil return lets the consumer Ack.
+// Handle processes one verified pedido.estoque_ok. A nil return lets the
+// consumer Ack; errors marked with rabbitmq.Permanent are rejected and any
+// other error (database, Mock) is retried by the reliable consumer.
 func (handler *EventHandler) Handle(envelope events.EventEnvelope) error {
 	if envelope.EventType != events.OrderStockConfirmed {
-		return fmt.Errorf(
+		return rabbitmq.Permanent(fmt.Errorf(
 			"tipo de evento inesperado no Pagamento: %s",
 			envelope.EventType,
-		)
+		))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), eventHandlerTimeout)
@@ -65,7 +63,7 @@ func (handler *EventHandler) Handle(envelope events.EventEnvelope) error {
 
 	payload, err := readStockConfirmed(envelope.Payload)
 	if err != nil {
-		return err
+		return rabbitmq.Permanent(err)
 	}
 
 	charge, exists, err := handler.store.FindChargeByOrder(ctx, payload.OrderID)
@@ -101,36 +99,12 @@ func (handler *EventHandler) Handle(envelope events.EventEnvelope) error {
 		log.Printf("[SUCESSO] Cobrança %s criada para o pedido %s", charge.ID, charge.OrderID)
 	}
 
-	if charge.CheckoutPublished || charge.Status != ChargePending {
-		log.Printf("[AVISO] Checkout do pedido %s já tratado; nada a publicar", charge.OrderID)
+	if charge.CheckoutPublished {
+		log.Printf("[AVISO] Checkout do pedido %s já publicado; repetição ignorada", charge.OrderID)
 		return nil
 	}
 
-	if err := handler.publisher.Publish(
-		events.PaymentCheckoutAvailable,
-		events.WebPaymentCheckoutPayload{
-			OrderID:     charge.OrderID,
-			CustomerID:  charge.CustomerID,
-			ChargeID:    charge.ID,
-			CheckoutURL: charge.CheckoutURL,
-			ExpiresAt:   charge.ExpiresAt,
-		},
-	); err != nil {
-		return fmt.Errorf(
-			"erro ao publicar pagamento.checkout_disponivel do pedido %s: %w",
-			charge.OrderID,
-			err,
-		)
-	}
-
-	if err := handler.store.MarkCheckoutPublished(ctx, charge.ID); err != nil {
-		return err
-	}
-
-	printBanner("CHECKOUT DISPONÍVEL - PEDIDO - %s", charge.OrderID)
-	log.Printf("[SUCESSO] Checkout do pedido %s publicado", charge.OrderID)
-
-	return nil
+	return handler.outbox.PublishCheckout(ctx, charge)
 }
 
 func readStockConfirmed(data json.RawMessage) (events.WebStockConfirmedPayload, error) {

@@ -15,6 +15,7 @@ type pageView struct {
 	Status    string
 	Expired   bool
 	Pending   bool
+	Rejected  bool
 	Message   string
 }
 
@@ -53,6 +54,8 @@ var checkoutTemplate = template.Must(template.New("checkout").Parse(`<!doctype h
   <form method="post" action="/checkout/{{.ChargeID}}/refuse"><button class="refuse" type="submit">Pagamento Recusado</button></form>
   {{else if .Expired}}
   <p class="status">Checkout expirado. Volte à loja e faça um novo pedido.</p>
+  {{else if .Rejected}}
+  <p class="status">A loja não aceitou o pagamento: o checkout expirou. Volte à loja e faça um novo pedido.</p>
   {{else if eq .Status "APPROVED"}}
   <p class="status">Pagamento aprovado. Você já pode fechar esta aba.</p>
   {{else}}

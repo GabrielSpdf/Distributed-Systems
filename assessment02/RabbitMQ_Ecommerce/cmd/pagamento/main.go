@@ -55,8 +55,8 @@ func run() error {
 	fmt.Println("==================================================================")
 
 	repository := mspagamento.NewRepository(databasePool)
-	publisher := mspagamento.NewSignedPublisher(
-		paymentService.Channel,
+	bus := mspagamento.NewConfirmedEventBus(
+		paymentService.Connection,
 		paymentService.PrivateKey,
 	)
 
@@ -66,14 +66,26 @@ func run() error {
 			BaseURL:    configuration.MockPaymentURL,
 			WebhookURL: configuration.PaymentWebhookURL,
 		}),
-		publisher,
+		bus,
 	)
+
+	pendingContext, cancelPending := context.WithCancel(context.Background())
+	defer cancelPending()
+
+	outbox := mspagamento.NewOutbox(repository, bus)
+
+	// Reenvia checkouts e resultados gravados cuja publicação não foi confirmada.
+	go outbox.RunPendingPublisher(pendingContext, 10*time.Second)
+
+	// O Pagamento é a autoridade do prazo: expira cobranças vencidas sem decisão
+	// e publica pagamento.recusado com motivo CHECKOUT_EXPIRED.
+	go mspagamento.RunChargeExpiration(pendingContext, repository, outbox, 5*time.Second, 5*time.Second)
 
 	server := &http.Server{
 		Addr: ":" + configuration.PaymentPort,
 		Handler: mspagamento.NewWebhookHandler(
 			repository,
-			publisher,
+			bus,
 			configuration.PaymentWebhookSecret,
 		).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -90,11 +102,13 @@ func run() error {
 
 	consumerErrors := make(chan error, 1)
 	go func() {
-		consumerErrors <- rabbitmq.ConsumeSignedEvents(
+		consumerErrors <- rabbitmq.ConsumeSignedEventsReliably(
+			paymentService.Connection,
 			paymentService.Channel,
 			paymentService.QueueName,
 			paymentService.PublicKeys,
 			eventHandler.Handle,
+			rabbitmq.RetryOptions{},
 		)
 	}()
 

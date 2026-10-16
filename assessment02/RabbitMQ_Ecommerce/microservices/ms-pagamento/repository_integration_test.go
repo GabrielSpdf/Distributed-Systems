@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"RabbitMQ_Ecommerce/utils/database"
+	"RabbitMQ_Ecommerce/utils/events"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -207,5 +208,212 @@ func TestApplyWebhookRejectsUnknownChargeAndOtherOrder(t *testing.T) {
 	found, _, _ := repository.FindChargeByOrder(ctx, prefix+"1")
 	if found.Status != ChargePending {
 		t.Fatalf("webhook rejeitado alterou a cobrança: %s", found.Status)
+	}
+}
+
+func TestApplyWebhookRejectsEventIDReusedForAnotherCharge(t *testing.T) {
+	repository, pool, prefix := openTestRepository(t)
+	ctx := context.Background()
+	first := saved(t, repository, pendingCharge(t, pool, prefix+"1"))
+	second := saved(t, repository, pendingCharge(t, pool, prefix+"2"))
+
+	if _, err := repository.ApplyWebhook(ctx, webhookFor(first, prefix+"whk-1", ChargeApproved), ""); err != nil {
+		t.Fatalf("erro ao aprovar a primeira cobrança: %v", err)
+	}
+
+	_, err := repository.ApplyWebhook(ctx, webhookFor(second, prefix+"whk-1", ChargeApproved), "")
+	if !errors.Is(err, ErrWebhookEventReused) {
+		t.Fatalf("esperava ErrWebhookEventReused, recebeu %v", err)
+	}
+
+	found, _, _ := repository.FindChargeByOrder(ctx, prefix+"2")
+	if found.Status != ChargePending {
+		t.Fatalf("evento reutilizado alterou outra cobrança: %s", found.Status)
+	}
+}
+
+func TestEnvelopesFirstWriterWins(t *testing.T) {
+	repository, pool, prefix := openTestRepository(t)
+	ctx := context.Background()
+	charge := saved(t, repository, pendingCharge(t, pool, prefix+"1"))
+
+	for _, save := range []func(context.Context, string, string) (string, error){
+		repository.SaveCheckoutEnvelope,
+		repository.SaveResultEnvelope,
+	} {
+		first, err := save(ctx, charge.ID, `{"event_id":"primeiro"}`)
+		if err != nil || first != `{"event_id":"primeiro"}` {
+			t.Fatalf("primeiro envelope não gravado: %q %v", first, err)
+		}
+
+		second, err := save(ctx, charge.ID, `{"event_id":"segundo"}`)
+		if err != nil || second != `{"event_id":"primeiro"}` {
+			t.Fatalf("segundo envelope substituiu o primeiro: %q %v", second, err)
+		}
+	}
+
+	found, _, _ := repository.FindChargeByOrder(ctx, prefix+"1")
+	if found.CheckoutEnvelope != `{"event_id":"primeiro"}` || found.ResultEnvelope != `{"event_id":"primeiro"}` {
+		t.Fatalf("envelopes não aparecem na cobrança: %+v", found)
+	}
+}
+
+func TestPendingCheckoutsAndResults(t *testing.T) {
+	repository, pool, prefix := openTestRepository(t)
+	ctx := context.Background()
+	charge := saved(t, repository, pendingCharge(t, pool, prefix+"1"))
+
+	contains := func(charges []Charge, chargeID string) bool {
+		for _, candidate := range charges {
+			if candidate.ID == chargeID {
+				return true
+			}
+		}
+		return false
+	}
+
+	checkouts, err := repository.ListPendingCheckouts(ctx, 0, 1000)
+	if err != nil || !contains(checkouts, charge.ID) {
+		t.Fatalf("checkout não publicado deveria estar pendente: %v", err)
+	}
+
+	results, _ := repository.ListPendingResults(ctx, 0, 1000)
+	if contains(results, charge.ID) {
+		t.Fatal("cobrança sem resultado não tem resultado pendente")
+	}
+
+	if err := repository.MarkCheckoutPublished(ctx, charge.ID); err != nil {
+		t.Fatalf("erro ao marcar checkout: %v", err)
+	}
+
+	if _, err := repository.ApplyWebhook(ctx, webhookFor(charge, prefix+"whk-1", ChargeApproved), ""); err != nil {
+		t.Fatalf("erro ao aprovar: %v", err)
+	}
+
+	checkouts, _ = repository.ListPendingCheckouts(ctx, 0, 1000)
+	results, err = repository.ListPendingResults(ctx, 0, 1000)
+	if err != nil || contains(checkouts, charge.ID) || !contains(results, charge.ID) {
+		t.Fatalf("esperava só o resultado pendente: checkout=%v resultado=%v err=%v",
+			contains(checkouts, charge.ID), contains(results, charge.ID), err)
+	}
+
+	if err := repository.MarkResultPublished(ctx, charge.ID); err != nil {
+		t.Fatalf("erro ao marcar resultado: %v", err)
+	}
+
+	results, _ = repository.ListPendingResults(ctx, 0, 1000)
+	if contains(results, charge.ID) {
+		t.Fatal("resultado publicado continua pendente")
+	}
+}
+
+func TestExpireNextChargeOnlyExpiresOverduePending(t *testing.T) {
+	repository, pool, prefix := openTestRepository(t)
+	ctx := context.Background()
+
+	overdue := saved(t, repository, pendingCharge(t, pool, prefix+"vencida"))
+
+	future := pendingCharge(t, pool, prefix+"futura")
+	future.ExpiresAt = time.Now().UTC().Add(time.Hour)
+	future = saved(t, repository, future)
+
+	approved := saved(t, repository, pendingCharge(t, pool, prefix+"aprovada"))
+	if _, err := repository.ApplyWebhook(ctx, webhookFor(approved, prefix+"whk-1", ChargeApproved), ""); err != nil {
+		t.Fatalf("erro ao aprovar: %v", err)
+	}
+
+	expired := map[string]Charge{}
+	for {
+		charge, found, err := repository.ExpireNextCharge(ctx, 0)
+		if err != nil {
+			t.Fatalf("erro ao expirar: %v", err)
+		}
+		if !found {
+			break
+		}
+		expired[charge.ID] = charge
+	}
+
+	got, ok := expired[overdue.ID]
+	if !ok || got.Status != ChargeExpired || got.Reason != events.ReasonCheckoutExpired || got.ProcessedAt.IsZero() {
+		t.Fatalf("cobrança vencida não expirou corretamente: %+v", got)
+	}
+
+	if _, wrong := expired[future.ID]; wrong {
+		t.Fatal("cobrança no prazo foi expirada")
+	}
+
+	if _, wrong := expired[approved.ID]; wrong {
+		t.Fatal("cobrança aprovada foi expirada")
+	}
+}
+
+func TestWebhookAfterExpiryIsRejected(t *testing.T) {
+	repository, pool, prefix := openTestRepository(t)
+	ctx := context.Background()
+
+	late := saved(t, repository, pendingCharge(t, pool, prefix+"atrasado"))
+	lateEvent := webhookFor(late, prefix+"whk-atrasado", ChargeApproved)
+	lateEvent.OccurredAt = late.ExpiresAt.Add(time.Second)
+
+	if _, err := repository.ApplyWebhook(ctx, lateEvent, ""); !errors.Is(err, ErrCheckoutExpired) {
+		t.Fatalf("esperava ErrCheckoutExpired para decisão após o prazo, recebeu %v", err)
+	}
+
+	expired := saved(t, repository, pendingCharge(t, pool, prefix+"expirada"))
+	if _, err := pool.Exec(ctx, "UPDATE pagamento.payment_charges SET status = 'EXPIRED' WHERE id = $1::uuid", expired.ID); err != nil {
+		t.Fatalf("erro ao preparar cobrança expirada: %v", err)
+	}
+
+	if _, err := repository.ApplyWebhook(ctx, webhookFor(expired, prefix+"whk-expirada", ChargeApproved), ""); !errors.Is(err, ErrConflictingResult) {
+		t.Fatalf("esperava ErrConflictingResult para cobrança expirada, recebeu %v", err)
+	}
+
+	for _, orderID := range []string{prefix + "atrasado", prefix + "expirada"} {
+		found, _, _ := repository.FindChargeByOrder(ctx, orderID)
+		if found.Status == ChargeApproved {
+			t.Fatalf("webhook atrasado aprovou a cobrança %s", orderID)
+		}
+	}
+}
+
+func TestSaveEnvelopeConcurrentWriterGetsStoredEnvelope(t *testing.T) {
+	repository, pool, prefix := openTestRepository(t)
+	ctx := context.Background()
+	charge := saved(t, repository, pendingCharge(t, pool, prefix+"1"))
+
+	first, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Rollback(ctx)
+
+	if _, err := first.Exec(ctx,
+		"UPDATE pagamento.payment_charges SET result_envelope = $2 WHERE id = $1::uuid AND result_envelope IS NULL",
+		charge.ID, `{"event_id":"primeiro"}`,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	type result struct {
+		stored string
+		err    error
+	}
+	done := make(chan result, 1)
+
+	go func() {
+		stored, err := repository.SaveResultEnvelope(ctx, charge.ID, `{"event_id":"segundo"}`)
+		done <- result{stored, err}
+	}()
+
+	time.Sleep(300 * time.Millisecond)
+
+	if err := first.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	got := <-done
+	if got.err != nil || got.stored != `{"event_id":"primeiro"}` {
+		t.Fatalf("segundo gravador deveria receber o envelope já gravado: %q %v", got.stored, got.err)
 	}
 }

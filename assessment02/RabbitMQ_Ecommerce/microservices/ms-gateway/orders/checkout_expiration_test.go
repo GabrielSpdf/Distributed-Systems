@@ -113,11 +113,13 @@ func TestExpireNextCheckoutIntegration(t *testing.T) {
 		f := &fixtures[i]
 		expiresAt := time.Now().UTC().Add(time.Hour)
 		if f.expired {
-			expiresAt = time.Now().UTC().Add(-time.Minute)
+			// Além da margem de segurança de 10 minutos do Gateway.
+			expiresAt = time.Now().UTC().Add(-11 * time.Minute)
 		}
 
 		if f.recentlyExpired {
-			expiresAt = time.Now().UTC().Add(-5 * time.Second)
+			// Vencido, mas dentro da margem: quem expira é o MS Pagamento.
+			expiresAt = time.Now().UTC().Add(-time.Minute)
 		}
 
 		if err := pool.QueryRow(ctx, `

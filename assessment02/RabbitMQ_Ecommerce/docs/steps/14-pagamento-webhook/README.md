@@ -143,13 +143,28 @@ reais, RabbitMQ e PostgreSQL:
   `Nack` sem reenfileiramento e o pedido fica em `ESTOQUE_CONFIRMADO`.
 - As cobranças do Mock ficam em memória: reiniciar o Mock invalida os links
   abertos (o Pagamento mantém sua cópia no banco).
-- O MS Entrega ainda é o da Avaliação 01 e precisa ser adaptado ao novo
-  `pagamento.aprovado` na próxima etapa.
+- O MS Entrega foi adaptado ao novo `pagamento.aprovado` na
+  [Etapa 16](../16-entrega/README.md).
 - O Mock já recusa cliques após `expires_at`. Lucas implementou a expiração no
   Gateway na branch `feat/checkout-expiration`, com demonstração local validada;
   consultar a [Etapa 15](../15-expiracao-checkout/README.md), inclusive os limites
-  de concorrência com pagamentos atrasados. Integração dessa branch ainda pendente.
+  de concorrência com pagamentos atrasados. Integrada pelo PR #26.
+- Correção de 15/10 (Etapa 16): webhook com `event_id` já usado por outra
+  cobrança agora recebe HTTP 409 `EVENT_ID_CONFLICT`, e nenhuma cobrança sem
+  resultado gravado é publicada.
 
 ## Estado
 
 MS Pagamento e Mock de Pagamento prontos e integrados ao Gateway e ao Estoque.
+
+## Atualização (Etapa 17)
+
+- O MS Pagamento é a autoridade do prazo: expira cobranças vencidas e publica
+  `pagamento.recusado` com `CHECKOUT_EXPIRED`; webhook depois do prazo recebe
+  `409`.
+- Checkout e resultado são assinados uma vez, gravados e publicados com
+  confirmação do RabbitMQ; uma rotina reenvia pendências. Com o resultado
+  gravado, o webhook responde `204` mesmo se o RabbitMQ falhar.
+- Mock fora do ar não descarta mais `pedido.estoque_ok`: novas tentativas e
+  depois `pagamento.revisao` (`go run ./cmd/reprocessar -fila pagamento`).
+- Detalhes na [Etapa 17](../17-confiabilidade-expiracao/README.md).

@@ -11,7 +11,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// ExpireNextCheckout cancela um checkout vencido.
+// ExpireNextCheckout cancela um checkout vencido há mais de 10 minutos.
+// O MS Pagamento é a autoridade do prazo e normalmente expira a cobrança antes
+// (publicando pagamento.recusado com motivo CHECKOUT_EXPIRED); este executor é
+// só uma rede de segurança para quando o Pagamento estiver fora do ar.
 // Retorna false quando não há pedido elegível.
 func (repository *Repository) ExpireNextCheckout(
 	ctx context.Context,
@@ -29,7 +32,7 @@ func (repository *Repository) ExpireNextCheckout(
 		FROM gateway.orders AS o
 		WHERE o.status = $1
 		  AND o.is_deleted = FALSE
-		  AND o.checkout_expires_at <= clock_timestamp() - INTERVAL '30 seconds'
+		  AND o.checkout_expires_at <= clock_timestamp() - INTERVAL '10 minutes'
 		  AND NOT EXISTS (
 		      SELECT 1
 		      FROM gateway.event_inbox AS inbox

@@ -8,9 +8,12 @@ import (
 	"time"
 
 	"RabbitMQ_Ecommerce/utils/events"
+	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
 
 type stubChargeStore struct {
+	stubOutboxStore
+
 	existing      *Charge
 	findErr       error
 	saveCalls     int
@@ -61,24 +64,6 @@ func (creator *stubChargeCreator) CreateCharge(
 		CheckoutURL: "http://localhost:8083/checkout/d67af0cb-b7e8-44c7-a035-22c349c2cbc3",
 		ExpiresAt:   time.Date(2026, 10, 1, 18, 31, 0, 0, time.UTC),
 	}, creator.err
-}
-
-type stubPublisher struct {
-	err       error
-	calls     int
-	eventType string
-	payload   map[string]any
-}
-
-func (publisher *stubPublisher) Publish(eventType string, payload any) error {
-	publisher.calls++
-	publisher.eventType = eventType
-
-	encoded, _ := json.Marshal(payload)
-	publisher.payload = make(map[string]any)
-	_ = json.Unmarshal(encoded, &publisher.payload)
-
-	return publisher.err
 }
 
 const stockConfirmedJSON = `{
@@ -225,9 +210,14 @@ func TestStockConfirmedPublishFailureLeavesCheckoutUnmarked(t *testing.T) {
 	store := &stubChargeStore{}
 	publisher := &stubPublisher{err: errors.New("broker fora do ar")}
 
+	// O checkout já está gravado com o envelope: a rotina de pendências reenvia.
 	err := NewEventHandler(store, &stubChargeCreator{}, publisher).Handle(stockConfirmed(stockConfirmedJSON))
-	if err == nil {
-		t.Fatal("esperava erro")
+	if err != nil {
+		t.Fatalf("com o envelope gravado, a falha de publicação não deve rejeitar: %v", err)
+	}
+
+	if len(store.checkoutEnvelopes) != 1 {
+		t.Fatal("envelope do checkout não foi gravado")
 	}
 
 	if len(store.markedChecked) != 0 {
@@ -241,5 +231,44 @@ func TestUnexpectedEventIsRejected(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("esperava erro para evento inesperado")
+	}
+}
+
+func TestStockConfirmedResendsStoredCheckoutEnvelope(t *testing.T) {
+	store := &stubChargeStore{existing: &Charge{
+		ID:               "c1",
+		OrderID:          "PED-001",
+		Status:           ChargePending,
+		CheckoutEnvelope: storedPaymentEnvelope(t, "checkout-original", events.PaymentCheckoutAvailable),
+	}}
+	publisher := &stubPublisher{}
+
+	if err := NewEventHandler(store, &stubChargeCreator{}, publisher).Handle(stockConfirmed(stockConfirmedJSON)); err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+
+	if publisher.signs != 0 || len(publisher.published) != 1 || publisher.published[0].EventID != "checkout-original" {
+		t.Fatalf("esperava reenviar o checkout gravado: assinaturas=%d %+v", publisher.signs, publisher.published)
+	}
+}
+
+func TestStockConfirmedErrorKinds(t *testing.T) {
+	invalid := NewEventHandler(&stubChargeStore{}, &stubChargeCreator{}, &stubPublisher{}).
+		Handle(stockConfirmed(`{"order_id":"PED-001"}`))
+	if !rabbitmq.IsPermanent(invalid) {
+		t.Fatalf("payload inválido deveria ser permanente: %v", invalid)
+	}
+
+	unexpected := NewEventHandler(&stubChargeStore{}, &stubChargeCreator{}, &stubPublisher{}).Handle(
+		events.EventEnvelope{EventType: events.OrderCreated, Payload: json.RawMessage(`{}`)},
+	)
+	if !rabbitmq.IsPermanent(unexpected) {
+		t.Fatalf("evento inesperado deveria ser permanente: %v", unexpected)
+	}
+
+	mockDown := NewEventHandler(&stubChargeStore{}, &stubChargeCreator{err: errors.New("mock fora do ar")}, &stubPublisher{}).
+		Handle(stockConfirmed(stockConfirmedJSON))
+	if mockDown == nil || rabbitmq.IsPermanent(mockDown) {
+		t.Fatalf("Mock fora do ar deveria ser temporário: %v", mockDown)
 	}
 }

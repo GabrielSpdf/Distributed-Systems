@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"RabbitMQ_Ecommerce/utils/events"
+	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
 
 type stubReservationStore struct {
@@ -21,6 +22,11 @@ type stubReservationStore struct {
 	releaseErr    error
 	releaseCalls  int
 	releasedOrder string
+
+	savedEnvelopes []string
+	saveErr        error
+	marked         []string
+	pending        []PendingResult
 }
 
 func (store *stubReservationStore) Reserve(
@@ -45,29 +51,70 @@ func (store *stubReservationStore) Release(
 	return ReservationReleased, store.releaseErr
 }
 
-type stubPublisher struct {
-	err       error
+func (store *stubReservationStore) SaveResultEnvelope(
+	_ context.Context,
+	_ string,
+	envelope string,
+) (string, error) {
+	if store.saveErr != nil {
+		return "", store.saveErr
+	}
+
+	store.savedEnvelopes = append(store.savedEnvelopes, envelope)
+
+	return envelope, nil
+}
+
+func (store *stubReservationStore) MarkResultPublished(_ context.Context, orderID string) error {
+	store.marked = append(store.marked, orderID)
+
+	return nil
+}
+
+func (store *stubReservationStore) ListPendingResults(
+	_ context.Context,
+	_ time.Duration,
+	_ int,
+) ([]PendingResult, error) {
+	return store.pending, nil
+}
+
+type stubSigner struct {
 	calls     int
 	eventType string
 	payload   map[string]any
 }
 
-func (publisher *stubPublisher) Publish(eventType string, payload any) error {
-	publisher.calls++
-	publisher.eventType = eventType
+func (signer *stubSigner) Sign(eventType string, payload any) (events.EventEnvelope, error) {
+	signer.calls++
+	signer.eventType = eventType
 
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return err
+	encoded, _ := json.Marshal(payload)
+	signer.payload = make(map[string]any)
+	_ = json.Unmarshal(encoded, &signer.payload)
+
+	return events.EventEnvelope{
+		EventID:   "evento-estoque-1",
+		EventType: eventType,
+		Producer:  events.ProducerStock,
+		Payload:   encoded,
+		Signature: "assinatura",
+	}, nil
+}
+
+type stubEnvelopePublisher struct {
+	err       error
+	published []events.EventEnvelope
+}
+
+func (publisher *stubEnvelopePublisher) Publish(_ context.Context, envelope events.EventEnvelope) error {
+	if publisher.err != nil {
+		return publisher.err
 	}
 
-	publisher.payload = make(map[string]any)
+	publisher.published = append(publisher.published, envelope)
 
-	if err := json.Unmarshal(encoded, &publisher.payload); err != nil {
-		return err
-	}
-
-	return publisher.err
+	return nil
 }
 
 const orderCreatedJSON = `{
@@ -89,26 +136,47 @@ func envelopeOf(eventType string, payload string) events.EventEnvelope {
 	}
 }
 
+func storedEnvelope(t *testing.T, eventID string) string {
+	t.Helper()
+
+	encoded, err := json.Marshal(events.EventEnvelope{
+		EventID:   eventID,
+		EventType: events.OrderStockConfirmed,
+		Producer:  events.ProducerStock,
+		Payload:   json.RawMessage(`{"order_id":"PED-001"}`),
+		Signature: "assinatura",
+	})
+	if err != nil {
+		t.Fatalf("erro ao montar envelope: %v", err)
+	}
+
+	return string(encoded)
+}
+
+type handlerParts struct {
+	store     *stubReservationStore
+	signer    *stubSigner
+	publisher *stubEnvelopePublisher
+	handler   *EventHandler
+}
+
+func newParts(result ReservationResult) handlerParts {
+	parts := handlerParts{
+		store:     &stubReservationStore{reserveResult: result},
+		signer:    &stubSigner{},
+		publisher: &stubEnvelopePublisher{},
+	}
+	parts.handler = NewEventHandler(parts.store, parts.signer, parts.publisher)
+
+	return parts
+}
+
 func TestOrderCreatedReservedPublishesStockConfirmed(t *testing.T) {
 	reservedAt := time.Date(2026, 10, 1, 18, 1, 0, 0, time.UTC)
+	parts := newParts(ReservationResult{Status: ReservationReserved, ReservedAt: reservedAt})
 
-	store := &stubReservationStore{
-		reserveResult: ReservationResult{
-			Status:     ReservationReserved,
-			ReservedAt: reservedAt,
-		},
-	}
-	publisher := &stubPublisher{}
-
-	err := NewEventHandler(store, publisher).Handle(
-		envelopeOf(events.OrderCreated, orderCreatedJSON),
-	)
-	if err != nil {
+	if err := parts.handler.Handle(envelopeOf(events.OrderCreated, orderCreatedJSON)); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
-	}
-
-	if store.reservedOrder != "PED-001" {
-		t.Fatalf("pedido inesperado: %s", store.reservedOrder)
 	}
 
 	expectedItems := []ReservationItem{
@@ -116,12 +184,8 @@ func TestOrderCreatedReservedPublishesStockConfirmed(t *testing.T) {
 		{ProductID: "PROD-002", Quantity: 3},
 	}
 
-	if !reflect.DeepEqual(store.reservedItems, expectedItems) {
-		t.Fatalf("itens inesperados: %+v", store.reservedItems)
-	}
-
-	if publisher.calls != 1 || publisher.eventType != events.OrderStockConfirmed {
-		t.Fatalf("publicação inesperada: %d %s", publisher.calls, publisher.eventType)
+	if parts.store.reservedOrder != "PED-001" || !reflect.DeepEqual(parts.store.reservedItems, expectedItems) {
+		t.Fatalf("reserva inesperada: %s %+v", parts.store.reservedOrder, parts.store.reservedItems)
 	}
 
 	expectedPayload := map[string]any{
@@ -132,31 +196,31 @@ func TestOrderCreatedReservedPublishesStockConfirmed(t *testing.T) {
 		"reserved_at": "2026-10-01T18:01:00Z",
 	}
 
-	if !reflect.DeepEqual(publisher.payload, expectedPayload) {
-		t.Fatalf("payload inesperado: %+v", publisher.payload)
+	if parts.signer.eventType != events.OrderStockConfirmed || !reflect.DeepEqual(parts.signer.payload, expectedPayload) {
+		t.Fatalf("pedido.estoque_ok inesperado: %s %+v", parts.signer.eventType, parts.signer.payload)
+	}
+
+	if len(parts.store.savedEnvelopes) != 1 {
+		t.Fatal("envelope não foi gravado antes da publicação")
+	}
+
+	if len(parts.publisher.published) != 1 || parts.publisher.published[0].EventID != "evento-estoque-1" {
+		t.Fatalf("publicação inesperada: %+v", parts.publisher.published)
+	}
+
+	if len(parts.store.marked) != 1 || parts.store.marked[0] != "PED-001" {
+		t.Fatalf("publicação não marcada: %v", parts.store.marked)
 	}
 }
 
 func TestOrderCreatedUnavailablePublishesStockUnavailable(t *testing.T) {
-	store := &stubReservationStore{
-		reserveResult: ReservationResult{
-			Status: ReservationUnavailable,
-			Shortfalls: []Shortfall{
-				{ProductID: "PROD-001", RequestedQuantity: 2, AvailableQuantity: 1},
-			},
-		},
-	}
-	publisher := &stubPublisher{}
+	parts := newParts(ReservationResult{
+		Status:     ReservationUnavailable,
+		Shortfalls: []Shortfall{{ProductID: "PROD-001", RequestedQuantity: 2, AvailableQuantity: 1}},
+	})
 
-	err := NewEventHandler(store, publisher).Handle(
-		envelopeOf(events.OrderCreated, orderCreatedJSON),
-	)
-	if err != nil {
+	if err := parts.handler.Handle(envelopeOf(events.OrderCreated, orderCreatedJSON)); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
-	}
-
-	if publisher.calls != 1 || publisher.eventType != events.StockUnavailable {
-		t.Fatalf("publicação inesperada: %d %s", publisher.calls, publisher.eventType)
 	}
 
 	expectedPayload := map[string]any{
@@ -172,57 +236,78 @@ func TestOrderCreatedUnavailablePublishesStockUnavailable(t *testing.T) {
 		"reason": "Estoque insuficiente",
 	}
 
-	if !reflect.DeepEqual(publisher.payload, expectedPayload) {
-		t.Fatalf("payload inesperado: %+v", publisher.payload)
+	if parts.signer.eventType != events.StockUnavailable || !reflect.DeepEqual(parts.signer.payload, expectedPayload) {
+		t.Fatalf("estoque.indisponivel inesperado: %s %+v", parts.signer.eventType, parts.signer.payload)
+	}
+
+	if len(parts.publisher.published) != 1 {
+		t.Fatal("estoque.indisponivel não publicado")
 	}
 }
 
 func TestOrderCreatedUnavailableWithoutShortfallsPublishesNothing(t *testing.T) {
-	store := &stubReservationStore{
-		reserveResult: ReservationResult{
-			Status:     ReservationUnavailable,
-			Shortfalls: []Shortfall{},
-		},
-	}
-	publisher := &stubPublisher{}
+	parts := newParts(ReservationResult{Status: ReservationUnavailable, Shortfalls: []Shortfall{}})
 
-	err := NewEventHandler(store, publisher).Handle(
-		envelopeOf(events.OrderCreated, orderCreatedJSON),
-	)
-	if err != nil {
+	if err := parts.handler.Handle(envelopeOf(events.OrderCreated, orderCreatedJSON)); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
 
-	if publisher.calls != 0 {
-		t.Fatalf("publicou estoque.indisponivel sem itens: %+v", publisher.payload)
+	if parts.signer.calls != 0 || len(parts.publisher.published) != 0 {
+		t.Fatal("estoque.indisponivel sem itens não deve ser publicado")
 	}
 }
 
 func TestOrderCreatedAfterCancellationPublishesNothing(t *testing.T) {
-	store := &stubReservationStore{
-		reserveResult: ReservationResult{Status: ReservationReleased},
-	}
-	publisher := &stubPublisher{}
+	parts := newParts(ReservationResult{Status: ReservationReleased})
 
-	err := NewEventHandler(store, publisher).Handle(
-		envelopeOf(events.OrderCreated, orderCreatedJSON),
-	)
-	if err != nil {
+	if err := parts.handler.Handle(envelopeOf(events.OrderCreated, orderCreatedJSON)); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
 
-	if publisher.calls != 0 {
-		t.Fatalf("pedido cancelado gerou publicação: %s", publisher.eventType)
+	if parts.signer.calls != 0 || len(parts.publisher.published) != 0 {
+		t.Fatal("pedido cancelado gerou publicação")
+	}
+}
+
+func TestRepeatedOrderResendsTheStoredEvent(t *testing.T) {
+	parts := newParts(ReservationResult{
+		Status:   ReservationReserved,
+		Envelope: storedEnvelope(t, "evento-original"),
+	})
+
+	if err := parts.handler.Handle(envelopeOf(events.OrderCreated, orderCreatedJSON)); err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+
+	if parts.signer.calls != 0 || len(parts.store.savedEnvelopes) != 0 {
+		t.Fatal("pedido repetido gerou um novo envelope")
+	}
+
+	if len(parts.publisher.published) != 1 || parts.publisher.published[0].EventID != "evento-original" {
+		t.Fatalf("esperava reenviar o evento original: %+v", parts.publisher.published)
+	}
+}
+
+func TestRepeatedOrderAlreadyPublishedDoesNothing(t *testing.T) {
+	parts := newParts(ReservationResult{
+		Status:    ReservationReserved,
+		Envelope:  storedEnvelope(t, "evento-original"),
+		Published: true,
+	})
+
+	if err := parts.handler.Handle(envelopeOf(events.OrderCreated, orderCreatedJSON)); err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+
+	if parts.signer.calls != 0 || len(parts.publisher.published) != 0 {
+		t.Fatal("resultado já publicado foi reenviado")
 	}
 }
 
 func TestOrderCreatedDefaultsCurrencyToBRL(t *testing.T) {
-	store := &stubReservationStore{
-		reserveResult: ReservationResult{Status: ReservationReserved},
-	}
-	publisher := &stubPublisher{}
+	parts := newParts(ReservationResult{Status: ReservationReserved})
 
-	err := NewEventHandler(store, publisher).Handle(envelopeOf(
+	err := parts.handler.Handle(envelopeOf(
 		events.OrderCreated,
 		`{"order_id":"PED-002","customer_id":"cliente","items":[{"product_id":"PROD-001","quantity":1}],"total":29.90}`,
 	))
@@ -230,12 +315,12 @@ func TestOrderCreatedDefaultsCurrencyToBRL(t *testing.T) {
 		t.Fatalf("erro inesperado: %v", err)
 	}
 
-	if publisher.payload["currency"] != "BRL" {
-		t.Fatalf("moeda inesperada: %v", publisher.payload["currency"])
+	if parts.signer.payload["currency"] != "BRL" {
+		t.Fatalf("moeda inesperada: %v", parts.signer.payload["currency"])
 	}
 }
 
-func TestOrderCreatedRejectsInvalidPayload(t *testing.T) {
+func TestOrderCreatedRejectsInvalidPayloadPermanently(t *testing.T) {
 	cases := map[string]string{
 		"JSON inválido": `{"order_id":`,
 		"sem pedido":    `{"customer_id":"cliente","items":[{"product_id":"PROD-001","quantity":1}]}`,
@@ -245,58 +330,60 @@ func TestOrderCreatedRejectsInvalidPayload(t *testing.T) {
 
 	for name, payload := range cases {
 		t.Run(name, func(t *testing.T) {
-			store := &stubReservationStore{}
-			publisher := &stubPublisher{}
+			parts := newParts(ReservationResult{})
 
-			err := NewEventHandler(store, publisher).Handle(
-				envelopeOf(events.OrderCreated, payload),
-			)
-			if err == nil {
-				t.Fatal("esperava erro")
+			err := parts.handler.Handle(envelopeOf(events.OrderCreated, payload))
+			if !rabbitmq.IsPermanent(err) {
+				t.Fatalf("esperava erro permanente, recebeu %v", err)
 			}
 
-			if store.reserveCalls != 0 || publisher.calls != 0 {
+			if parts.store.reserveCalls != 0 || len(parts.publisher.published) != 0 {
 				t.Fatal("payload inválido chegou ao banco ou foi publicado")
 			}
 		})
 	}
 }
 
-func TestOrderCreatedStoreFailurePublishesNothing(t *testing.T) {
-	store := &stubReservationStore{reserveErr: errors.New("banco fora do ar")}
-	publisher := &stubPublisher{}
+func TestInvalidOrderFromStoreIsPermanent(t *testing.T) {
+	parts := newParts(ReservationResult{})
+	parts.store.reserveErr = ErrInvalidOrder
 
-	err := NewEventHandler(store, publisher).Handle(
-		envelopeOf(events.OrderCreated, orderCreatedJSON),
-	)
-	if err == nil {
-		t.Fatal("esperava erro")
+	if err := parts.handler.Handle(envelopeOf(events.OrderCreated, orderCreatedJSON)); !rabbitmq.IsPermanent(err) {
+		t.Fatalf("pedido inválido deveria ser permanente: %v", err)
+	}
+}
+
+func TestStoreFailureIsTemporaryAndPublishesNothing(t *testing.T) {
+	parts := newParts(ReservationResult{})
+	parts.store.reserveErr = errors.New("banco fora do ar")
+
+	err := parts.handler.Handle(envelopeOf(events.OrderCreated, orderCreatedJSON))
+	if err == nil || rabbitmq.IsPermanent(err) {
+		t.Fatalf("falha no banco deveria ser temporária: %v", err)
 	}
 
-	if publisher.calls != 0 {
+	if len(parts.publisher.published) != 0 {
 		t.Fatal("houve publicação sem persistência")
 	}
 }
 
-func TestOrderCreatedPublishFailureIsReported(t *testing.T) {
-	store := &stubReservationStore{
-		reserveResult: ReservationResult{Status: ReservationReserved},
-	}
-	publisher := &stubPublisher{err: errors.New("broker fora do ar")}
+func TestPublishFailureKeepsResultPending(t *testing.T) {
+	parts := newParts(ReservationResult{Status: ReservationReserved})
+	parts.publisher.err = errors.New("broker fora do ar")
 
-	err := NewEventHandler(store, publisher).Handle(
-		envelopeOf(events.OrderCreated, orderCreatedJSON),
-	)
-	if err == nil {
-		t.Fatal("esperava erro de publicação")
+	if err := parts.handler.Handle(envelopeOf(events.OrderCreated, orderCreatedJSON)); err != nil {
+		t.Fatalf("com o envelope gravado, a falha de publicação não deve rejeitar: %v", err)
+	}
+
+	if len(parts.store.savedEnvelopes) != 1 || len(parts.store.marked) != 0 {
+		t.Fatal("esperava envelope gravado e resultado pendente")
 	}
 }
 
 func TestOrderDeletedReleasesStock(t *testing.T) {
-	store := &stubReservationStore{}
-	publisher := &stubPublisher{}
+	parts := newParts(ReservationResult{})
 
-	err := NewEventHandler(store, publisher).Handle(envelopeOf(
+	err := parts.handler.Handle(envelopeOf(
 		events.OrderDeleted,
 		`{"order_id":"PED-001","customer_id":"cliente","reason":"PAYMENT_REFUSED","cancelled_at":"2026-10-01T18:11:00Z"}`,
 	))
@@ -304,46 +391,59 @@ func TestOrderDeletedReleasesStock(t *testing.T) {
 		t.Fatalf("erro inesperado: %v", err)
 	}
 
-	if store.releaseCalls != 1 || store.releasedOrder != "PED-001" {
-		t.Fatalf("liberação inesperada: %d %s", store.releaseCalls, store.releasedOrder)
-	}
-
-	if publisher.calls != 0 {
-		t.Fatal("pedido.excluido não deve gerar publicação")
+	if parts.store.releaseCalls != 1 || parts.store.releasedOrder != "PED-001" || len(parts.publisher.published) != 0 {
+		t.Fatalf("liberação inesperada: %d %s", parts.store.releaseCalls, parts.store.releasedOrder)
 	}
 }
 
-func TestOrderDeletedRejectsMissingOrder(t *testing.T) {
-	store := &stubReservationStore{}
+func TestOrderDeletedRejectsMissingOrderPermanently(t *testing.T) {
+	parts := newParts(ReservationResult{})
 
-	err := NewEventHandler(store, &stubPublisher{}).Handle(
-		envelopeOf(events.OrderDeleted, `{"reason":"CUSTOMER_CANCELLED"}`),
-	)
-	if err == nil {
-		t.Fatal("esperava erro")
-	}
-
-	if store.releaseCalls != 0 {
-		t.Fatal("liberação chamada sem pedido")
+	err := parts.handler.Handle(envelopeOf(events.OrderDeleted, `{"reason":"CUSTOMER_CANCELLED"}`))
+	if !rabbitmq.IsPermanent(err) || parts.store.releaseCalls != 0 {
+		t.Fatalf("esperava erro permanente sem liberação: %v", err)
 	}
 }
 
-func TestOrderDeletedStoreFailureIsReported(t *testing.T) {
-	store := &stubReservationStore{releaseErr: errors.New("banco fora do ar")}
+func TestOrderDeletedStoreFailureIsTemporary(t *testing.T) {
+	parts := newParts(ReservationResult{})
+	parts.store.releaseErr = errors.New("banco fora do ar")
 
-	err := NewEventHandler(store, &stubPublisher{}).Handle(
-		envelopeOf(events.OrderDeleted, `{"order_id":"PED-001"}`),
-	)
-	if err == nil {
-		t.Fatal("esperava erro")
+	err := parts.handler.Handle(envelopeOf(events.OrderDeleted, `{"order_id":"PED-001"}`))
+	if err == nil || rabbitmq.IsPermanent(err) {
+		t.Fatalf("falha no banco deveria ser temporária: %v", err)
 	}
 }
 
-func TestUnexpectedEventIsRejected(t *testing.T) {
-	err := NewEventHandler(&stubReservationStore{}, &stubPublisher{}).Handle(
-		envelopeOf(events.PaymentApproved, `{}`),
-	)
-	if err == nil {
-		t.Fatal("esperava erro para evento inesperado")
+func TestUnexpectedEventIsRejectedPermanently(t *testing.T) {
+	parts := newParts(ReservationResult{})
+
+	if err := parts.handler.Handle(envelopeOf(events.PaymentApproved, `{}`)); !rabbitmq.IsPermanent(err) {
+		t.Fatalf("evento inesperado deveria ser permanente: %v", err)
+	}
+}
+
+func TestPublishPendingResendsStoredResults(t *testing.T) {
+	parts := newParts(ReservationResult{})
+	parts.store.pending = []PendingResult{
+		{OrderID: "PED-001", Envelope: storedEnvelope(t, "evento-1")},
+		{OrderID: "PED-002", Envelope: storedEnvelope(t, "evento-2")},
+	}
+
+	sent, err := parts.handler.PublishPending(context.Background())
+	if err != nil || sent != 2 || len(parts.store.marked) != 2 ||
+		parts.publisher.published[0].EventID != "evento-1" {
+		t.Fatalf("reenvio inesperado: %d %v %+v", sent, err, parts.publisher.published)
+	}
+}
+
+func TestPublishPendingStopsWhenBrokerFails(t *testing.T) {
+	parts := newParts(ReservationResult{})
+	parts.store.pending = []PendingResult{{OrderID: "PED-001", Envelope: storedEnvelope(t, "evento-1")}}
+	parts.publisher.err = errors.New("broker fora do ar")
+
+	sent, err := parts.handler.PublishPending(context.Background())
+	if err == nil || sent != 0 || len(parts.store.marked) != 0 {
+		t.Fatalf("esperava parar sem marcar: %d %v", sent, err)
 	}
 }

@@ -54,3 +54,11 @@ func NextOrderStatus(
 
 	return nextStatus, nil
 }
+
+// isCheckoutExpiredRefusal reconhece a recusa que o MS Pagamento publica ao
+// expirar uma cobrança sem decisão.
+func isCheckoutExpiredRefusal(eventType string, event StatusEvent) bool {
+	return eventType == events.PaymentRefused &&
+		event.Payment != nil &&
+		event.Payment.Reason == events.ReasonCheckoutExpired
+}

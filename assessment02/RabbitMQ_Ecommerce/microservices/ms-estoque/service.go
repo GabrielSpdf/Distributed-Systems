@@ -1,6 +1,7 @@
 package msestoque
 
 import (
+	"context"
 	"crypto/rsa"
 	"fmt"
 	"log"
@@ -110,45 +111,46 @@ func InitializeStockService() (
 	return runtime, nil
 }
 
-// SignedPublisher signs each event as ms-estoque and sends it to the
-// eCommerce exchange, using the event type as the routing key.
-type SignedPublisher struct {
-	channel    *amqp.Channel
+// Signer signs outgoing events as ms-estoque.
+type Signer struct {
 	privateKey *rsa.PrivateKey
 }
 
-func NewSignedPublisher(
-	channel *amqp.Channel,
-	privateKey *rsa.PrivateKey,
-) *SignedPublisher {
-	return &SignedPublisher{
-		channel:    channel,
+func NewSigner(privateKey *rsa.PrivateKey) *Signer {
+	return &Signer{
 		privateKey: privateKey,
 	}
 }
 
-func (publisher *SignedPublisher) Publish(
-	eventType string,
-	payload any,
-) error {
-	envelope, err := misc.BuildSignedEnvelope(
+func (signer *Signer) Sign(eventType string, payload any) (events.EventEnvelope, error) {
+	return misc.BuildSignedEnvelope(
 		payload,
 		eventType,
 		events.ProducerStock,
-		publisher.privateKey,
+		signer.privateKey,
 	)
-	if err != nil {
-		return fmt.Errorf("erro ao montar envelope: %w", err)
-	}
+}
 
-	if err := rabbitmq.PublishEvent(
-		publisher.channel,
+// ConfirmedPublisher sends envelopes to the eCommerce exchange and waits for
+// the RabbitMQ confirmation.
+type ConfirmedPublisher struct {
+	connection *amqp.Connection
+}
+
+func NewConfirmedPublisher(connection *amqp.Connection) *ConfirmedPublisher {
+	return &ConfirmedPublisher{
+		connection: connection,
+	}
+}
+
+func (publisher *ConfirmedPublisher) Publish(
+	ctx context.Context,
+	envelope events.EventEnvelope,
+) error {
+	return rabbitmq.PublishConfirmed(
+		ctx,
+		publisher.connection,
 		events.ExchangeEcommerce,
-		eventType,
 		envelope,
-	); err != nil {
-		return fmt.Errorf("erro ao enviar evento: %w", err)
-	}
-
-	return nil
+	)
 }

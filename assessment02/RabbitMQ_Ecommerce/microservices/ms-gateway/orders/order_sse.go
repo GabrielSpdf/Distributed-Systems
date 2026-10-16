@@ -130,6 +130,10 @@ func (repository *Repository) notifyAppliedStatusEvent(
 		return
 	}
 
+	if isCheckoutExpiredRefusal(eventType, event) {
+		status = StatusCancelled
+	}
+
 	repository.notifyOrderStatus(
 		event.CustomerID,
 		event.OrderID,
