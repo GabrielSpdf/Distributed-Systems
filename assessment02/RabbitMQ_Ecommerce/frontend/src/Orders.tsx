@@ -75,8 +75,24 @@ function Orders({ refreshKey }: OrdersProps) {
   const [streamState, setStreamState] = useState<
     'connecting' | 'connected' | 'reconnecting'
   >('connecting')
-  const [statusNotification, setStatusNotification] = useState('')
+  const [statusNotifications, setStatusNotifications] = useState<
+    { id: string; message: string; expiresAt: number }[]
+  >([])
+  const notificationSequence = useRef(0)
   const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (statusNotifications.length === 0) return
+
+    const nextExpiry = Math.min(...statusNotifications.map((item) => item.expiresAt))
+    const timer = window.setTimeout(() => {
+      setStatusNotifications((current) =>
+        current.filter((item) => item.expiresAt > Date.now()),
+      )
+    }, Math.max(0, nextExpiry - Date.now()))
+
+    return () => window.clearTimeout(timer)
+  }, [statusNotifications])
 
   useEffect(() => {
       const timer = window.setInterval(() => {
@@ -179,8 +195,17 @@ function Orders({ refreshKey }: OrdersProps) {
         if (!('status' in data) || typeof data.status !== 'string') return
         if (!Object.hasOwn(statusLabels, data.status)) return
 
-        setStatusNotification(
-          `Pedido ${data.orderId}: ${statusLabels[data.status]}.`,
+        const notification = {
+          id: event.lastEventId || `local-${++notificationSequence.current}`,
+          message: `Pedido ${data.orderId}: ${statusLabels[data.status]}.`,
+          expiresAt: Date.now() + 8000,
+        }
+        // Atualização funcional preserva eventos recebidos no mesmo ciclo.
+        // Cada aviso tem seu próprio prazo: novos eventos não renovam os anteriores.
+        setStatusNotifications((current) =>
+          current.some((item) => item.id === notification.id)
+            ? current
+            : [...current, notification],
         )
         scheduleRefresh()
       } catch {
@@ -239,16 +264,6 @@ function Orders({ refreshKey }: OrdersProps) {
       }
     }
   }, [])
-
-  useEffect(() => {
-    if (!statusNotification) return
-
-    const timer = window.setTimeout(() => {
-      setStatusNotification('')
-    }, 8000)
-
-    return () => window.clearTimeout(timer)
-  }, [statusNotification])
 
 
   async function showDetails(order: Order) {
@@ -346,11 +361,19 @@ function Orders({ refreshKey }: OrdersProps) {
             : 'Reconectando às atualizações. Você pode usar o botão Atualizar.'}
       </p>
 
-      {statusNotification && (
-        <div className="order-notification" role="status">
-          {statusNotification}
-        </div>
-      )}
+      <div
+        className="order-notifications"
+        role="log"
+        aria-label="Atualizações dos pedidos"
+        aria-live="polite"
+        aria-relevant="additions"
+      >
+        {statusNotifications.map((notification) => (
+          <div className="order-notification" key={notification.id}>
+            {notification.message}
+          </div>
+        ))}
+      </div>
 
       {loading ? (
         <div className="catalog-state" role="status">

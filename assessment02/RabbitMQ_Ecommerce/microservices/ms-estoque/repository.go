@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
+	"RabbitMQ_Ecommerce/utils/events"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -84,10 +86,45 @@ func (repository *Repository) ListProducts(
 // Reserve checks every item and, only if all are available, lowers the stock
 // and records the reservation in one transaction. An order that already has a
 // stored outcome is never processed twice.
+// ReserveOrder é o caminho dos eventos: guarda e compara o pedido completo,
+// sem usar event_id, assinatura ou ordem dos itens como identidade de negócio.
+func (repository *Repository) ReserveOrder(ctx context.Context, payload events.WebOrderCreatedPayload) (ReservationResult, error) {
+	if err := events.ValidateWebOrderCreated(payload); err != nil {
+		return ReservationResult{}, fmt.Errorf("%w: %v", ErrInvalidOrder, err)
+	}
+	payload.Items = append([]events.WebOrderItem(nil), payload.Items...)
+	sort.Slice(payload.Items, func(i, j int) bool { return payload.Items[i].ProductID < payload.Items[j].ProductID })
+	items := make([]ReservationItem, 0, len(payload.Items))
+	for i := range payload.Items {
+		cents, _ := events.PositiveMoneyCents(payload.Items[i].UnitPrice)
+		payload.Items[i].UnitPrice = float64(cents) / 100
+		items = append(items, ReservationItem{ProductID: payload.Items[i].ProductID, Quantity: payload.Items[i].Quantity})
+	}
+	cents, _ := events.PositiveMoneyCents(payload.Total)
+	payload.Total = float64(cents) / 100
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return ReservationResult{}, err
+	}
+	snapshot := string(encoded)
+	return repository.reserve(ctx, payload.OrderID, items, &snapshot)
+}
+
+// Reserve mantém a operação de baixo nível usada nos testes de estoque.
+// Eventos devem chamar ReserveOrder para validar também cliente e valores.
 func (repository *Repository) Reserve(
 	ctx context.Context,
 	orderID string,
 	items []ReservationItem,
+) (ReservationResult, error) {
+	return repository.reserve(ctx, orderID, items, nil)
+}
+
+func (repository *Repository) reserve(
+	ctx context.Context,
+	orderID string,
+	items []ReservationItem,
+	snapshot *string,
 ) (ReservationResult, error) {
 	if orderID == "" {
 		return ReservationResult{}, fmt.Errorf(
@@ -113,17 +150,22 @@ func (repository *Repository) Reserve(
 		storedShortfalls *string
 		storedEnvelope   *string
 		published        bool
+		sameRequest      bool
+		missingRequest   bool
 	)
 
 	err = tx.QueryRow(
 		ctx,
 		`SELECT status, created_at, shortfalls, result_envelope,
-		        result_published_at IS NOT NULL
+		        result_published_at IS NOT NULL,
+		        COALESCE($2::jsonb IS NULL OR request_payload = $2::jsonb, FALSE),
+		        request_payload IS NULL
 		   FROM estoque.stock_reservations
 		  WHERE order_id = $1
 		    FOR UPDATE`,
 		orderID,
-	).Scan(&existingStatus, &createdAt, &storedShortfalls, &storedEnvelope, &published)
+		snapshot,
+	).Scan(&existingStatus, &createdAt, &storedShortfalls, &storedEnvelope, &published, &sameRequest, &missingRequest)
 
 	alreadyProcessed := err == nil
 
@@ -132,6 +174,14 @@ func (repository *Repository) Reserve(
 	}
 
 	if alreadyProcessed {
+		if snapshot == nil && !missingRequest {
+			return ReservationResult{}, fmt.Errorf("%w: use ReserveOrder para comparar o pedido original", ErrInvalidOrder)
+		}
+		// Cancelamento preventivo sem criação conhecida é um tombstone:
+		// qualquer criação tardia continua sem reservar nada.
+		if snapshot != nil && !(existingStatus == ReservationReleased && missingRequest) && !sameRequest {
+			return ReservationResult{}, fmt.Errorf("%w: pedido %s com dados divergentes ou original ausente", ErrInvalidOrder, orderID)
+		}
 		stored := ReservationResult{
 			Status:     existingStatus,
 			ReservedAt: createdAt.UTC(),
@@ -181,11 +231,12 @@ func (repository *Repository) Reserve(
 
 		if _, err := tx.Exec(
 			ctx,
-			`INSERT INTO estoque.stock_reservations (order_id, status, shortfalls)
-			 VALUES ($1, $2, $3)`,
+			`INSERT INTO estoque.stock_reservations (order_id, status, shortfalls, request_payload)
+			 VALUES ($1, $2, $3, $4::jsonb)`,
 			orderID,
 			ReservationUnavailable,
 			string(encodedShortfalls),
+			snapshot,
 		); err != nil {
 			return ReservationResult{}, fmt.Errorf("erro ao registrar indisponibilidade: %w", err)
 		}
@@ -202,11 +253,12 @@ func (repository *Repository) Reserve(
 
 	err = tx.QueryRow(
 		ctx,
-		`INSERT INTO estoque.stock_reservations (order_id, status)
-		 VALUES ($1, $2)
+		`INSERT INTO estoque.stock_reservations (order_id, status, request_payload)
+		 VALUES ($1, $2, $3::jsonb)
 		 RETURNING created_at`,
 		orderID,
 		ReservationReserved,
+		snapshot,
 	).Scan(&createdAt)
 	if err != nil {
 		return ReservationResult{}, fmt.Errorf("erro ao registrar reserva: %w", err)

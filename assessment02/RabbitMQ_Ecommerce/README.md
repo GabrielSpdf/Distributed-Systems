@@ -1,430 +1,389 @@
-# E-commerce Web - REST, RabbitMQ e SSE
+# Event Market - E-commerce com REST, RabbitMQ e SSE
 
-Evolução do projeto da Avaliação 01 para uma aplicação web com frontend React,
-API Gateway em Go, PostgreSQL, RabbitMQ, SSE, pagamento via webhook e envio de
-promoções por e-mail.
+Aplicação acadêmica de Sistemas Distribuídos da UTFPR, evolução da Avaliação 01.
+Frontend em React/TypeScript; API Gateway e microsserviços em Go.
+O fluxo atual persiste dados no PostgreSQL, usa RabbitMQ para eventos,
+SSE para atualizações no navegador, Mock de Pagamento com webhook e Resend para promoções.
 
-## Estado atual
-
-- código da Avaliação 01 preservado como base;
-- configuração centralizada por variáveis de ambiente;
-- PostgreSQL e RabbitMQ definidos no Docker Compose;
-- schema inicial do banco criado em `migrations/001_initial.sql`;
-- API Gateway HTTP inicial com `GET /` e `GET /healthz`;
-- frontend React + TypeScript + Vite inicial;
-- Gateway conectado ao PostgreSQL e autenticação com telas de acesso;
-- catálogo REST e interface validados com Estoque simulado;
-- carrinho e criação, listagem e detalhes de pedidos persistidos no PostgreSQL;
-- publicação assinada de pedido.criado validada em fila de teste no RabbitMQ;
-- falha de publicação registrada no estado e histórico do pedido;
-- consumo assinado, inbox e atualização de status integrados pelo PR #19;
-- cancelamento autenticado com link condicional e confirmação na interface,
-  integrado pelo PR #20;
-- outbox de compensação com assinatura preservada, confirmação do RabbitMQ,
-  recuperação após indisponibilidade e limite de tentativas validados;
-- MS Estoque com PostgreSQL, endpoint interno de catálogo e reserva por
-  eventos assinados (Etapa 13);
-- MS Pagamento com cobrança no Mock de Pagamento, checkout em nova aba e
-  webhook assinado com HMAC, validados com o Gateway (Etapa 14);
-- MS Entrega com os contratos atuais, uma entrega por pedido, nota e rastreio
-  simulados e `pedido.enviado` publicado com confirmação do RabbitMQ (Etapa 16);
-- SSE autenticado para status e checkout, atualização automática da interface,
-  notificações e reconexão integrados pelo PR #21;
-- link condicional de checkout, abertura em nova aba e indicação de expiração
-  validados com evento assinado simulado e integrados pelo PR #22;
-- cancelamento automático por expiração implementado na branch
-  `feat/checkout-expiration`, com compensação pela outbox e atualização por SSE;
-  integrado pelo PR #26 (Etapa 15); com a Etapa 17 o MS Pagamento passou a
-  ser a autoridade do prazo e o executor do Gateway virou rede de segurança;
-- consumidor confiável com novas tentativas e filas de revisão, publicação com
-  confirmação do RabbitMQ, rastreio no pedido e e-mail na inscrição de
-  promoções (Etapa 17);
-- matriz de integração T01–T20 executada com evidências (Etapa 18) e roteiro
-  de demonstração em [docs/demo](docs/demo/README.md).
-
-## Atualização da divisão de trabalho - Promoções
-
-Em 12/10/2026, Lucas decidiu assumir o fluxo completo de promoções na branch
-`feat/promotion-preferences`, incluindo a parte inicialmente atribuída a Gabriel:
-
-- tela de preferências e endpoints autenticados no Gateway;
-- persistência da escolha do cliente e publicação confiável de `interesse.promocao`;
-- consumo idempotente dos interesses no MS Promoções e cancelamento da inscrição;
-- geração/publicação das ofertas por categoria usando as routing keys existentes;
-- integração com API externa de e-mail e registro das tentativas de envio;
-- testes e documentação do fluxo.
-
-O fluxo de promoções foi integrado pelo PR #23 e demonstrado: preferências
-autenticadas, outbox do Gateway, consumo dos interesses, ofertas assinadas pelo
-RabbitMQ, geração manual/aleatória e envio de e-mail pelo Resend. Foram validados
-o recebimento real, o cancelamento do interesse e duas entregas do mesmo evento
-criando somente um envio por usuário.
-
-O envio permanece restrito a `RESEND_TEST_RECIPIENT`. O gerador usa o catálogo
-local `data/inventory.json`; não consulta o serviço real de Estoque. O modo
-automático publica imediatamente e depois a cada 60 segundos, por padrão.
-
-Estoque, Pagamento e Mock foram implementados por Gabriel e já estão na `main`.
-A proposta anterior de Lucas assumir Pagamento/Mock não gerou outra implementação:
-o trabalho local foi retirado para evitar duplicação. Lucas implementa a expiração
-no Gateway; Entrega permanece como próxima integração de Gabriel. A manutenção e
-a apresentação de Pagamento/Mock devem ser combinadas entre os dois.
-Detalhes em [Divisão de responsabilidades](docs/steps/00-divisao-equipe/README.md).
-
-## Guias por etapa
-
-- [Etapa 00 - Divisão de responsabilidades](docs/steps/00-divisao-equipe/README.md)
-- [Etapa 01 - Infraestrutura local](docs/steps/01-infraestrutura/README.md)
-- [Etapa 02 - Contratos de integração](docs/steps/02-contratos/README.md)
-- [Etapa 03 - Integração entre Gateway e PostgreSQL](docs/steps/03-gateway-postgres/README.md)
-- [Etapa 04 - Autenticação e telas de acesso](docs/steps/04-autenticacao/README.md)
-- [Etapa 05 - Catálogo no Gateway e React](docs/steps/05-catalogo/README.md)
-- [Etapa 06 - Carrinho e pedidos (em andamento)](docs/steps/06-carrinho-pedidos/README.md)
-- [Etapa 07 - Eventos de pedidos (em andamento)](docs/steps/07-eventos-pedidos/README.md)
-- [Etapa 08 - Consumo de eventos e status dos pedidos (em andamento)](docs/steps/08-status-pedidos/README.md)
-- [Etapa 09 - Cancelamento e compensação (em andamento)](docs/steps/09-cancelamento-compensacao/README.md)
-- [Etapa 10 - Atualização de pedidos por SSE (em andamento)](docs/steps/10-sse-pedidos/README.md)
-- [Etapa 11 - Link de checkout dos pedidos](docs/steps/11-checkout-pedidos/README.md)
-- [Etapa 12 - Preferências, ofertas e e-mail de promoções](docs/steps/12-promocoes-email/README.md)
-- [Etapa 13 - MS Estoque com PostgreSQL](docs/steps/13-estoque-postgres/README.md)
-- [Etapa 14 - MS Pagamento e Mock de Pagamento](docs/steps/14-pagamento-webhook/README.md)
-- [Etapa 15 - Expiração automática do checkout](docs/steps/15-expiracao-checkout/README.md)
-- [Etapa 16 - MS Entrega com os contratos da Avaliação 02](docs/steps/16-entrega/README.md)
-- [Etapa 17 - Confiabilidade, autoridade do prazo e ajustes finais](docs/steps/17-confiabilidade-expiracao/README.md)
-- [Etapa 18 - Validação de integração (T01–T20)](docs/steps/18-validacao-integracao/README.md)
-- [Roteiro de execução e demonstração](docs/demo/README.md)
-
-## Configuração inicial
-
-1. Copie `.env.example` para `.env`.
-2. Configure `JWT_SECRET` no ambiente do terminal com pelo menos 32 bytes.
-   O Gateway não carrega `.env` automaticamente. Preserve o mesmo segredo ao
-   reiniciar para manter as sessões existentes válidas.
-3. Inicie PostgreSQL e RabbitMQ com `docker compose up -d`.
-4. Execute o Gateway com `go run ./cmd/gateway`.
-5. Em outro terminal, entre em `frontend`, execute `npm install` e depois
-   `npm run dev`.
-6. Abra `http://localhost:5173`.
-
-O endpoint `http://localhost:8080/healthz` deve responder com o estado saudável
-do API Gateway. O painel do RabbitMQ fica disponível em
-`http://localhost:15672`.
-
-## Projeto original
-
-Sistema distribuído de E-Commerce orientado a eventos, desenvolvido em Go e RabbitMQ como atividade acadêmica da disciplina de Sistemas Distribuídos.
-
-O projeto simula o processamento assíncrono de pedidos entre os microsserviços Principal, Estoque, Pagamento e Entrega, além da publicação e do consumo de promoções por categoria. Os eventos relacionados a pedidos utilizam assinatura digital RSA-PSS com SHA-256 para validar sua autenticidade e integridade.
+Autores: Gabriel de Almeida Spadafora e Lucas de Lima Nogueira.
 
 ## Funcionalidades
 
-- Cadastro e consulta de pedidos pelo terminal;
-- Consulta do catálogo de produtos e estoque;
-- Reserva e devolução de estoque;
-- Aprovação ou recusa simulada de pagamentos;
+- Cadastro, login e consultas autenticadas dos próprios pedidos.
+- Catálogo consultado pelo Gateway diretamente no MS Estoque via REST.
+- Carrinho, criação de pedidos, reserva de produtos e consulta do histórico.
+- Checkout em nova aba com aprovação ou recusa simulada.
+- Expiração de cobranças, cancelamento e devolução de estoque.
+- Nota fiscal e rastreamento simulados após pagamento aprovado.
+- Notificações SSE de estoque confirmado, checkout, pagamento e envio.
+- Preferências de promoções por categoria, inscrição com e-mail e cancelamento.
+- Ofertas assinadas, processamento idempotente e envio pela API externa Resend.
 
-- Publicação periódica de promoções por categoria;
-- Consumidores de promoções com bindings diferentes;
-- Persistência local de pedidos e estoque em JSON;
-- Assinatura digital dos eventos do fluxo de pedidos;
-- Descarte de eventos com assinatura inválida.
+Limitação mantida para a demonstração: o envio real de promoções é restrito
+ao destinatário de teste configurado. Não está habilitado para qualquer e-mail.
 
-## Arquitetura
+## Arquitetura e responsabilidades
 
-<p align="center">
-  <img
-    src="docs/architecture.png"
-    alt="Arquitetura do sistema RabbitMQ E-commerce"
-    width="900"
-  >
-</p>
-
-As mensagens não são publicadas diretamente nas filas. Cada produtor envia o evento para uma exchange utilizando uma routing key. O RabbitMQ encaminha a mensagem às filas que possuem bindings compatíveis.
-
-### Exchanges
-
-| Exchange | Tipo | Finalidade |
+| Componente | Responsabilidade | Comunicação |
 |---|---|---|
-| `eCommerce` | `direct` | Processamento de pedidos, estoque, pagamento e entrega |
-| `Promocoes` | `topic` | Distribuição de promoções por categoria |
+| Frontend | Catálogo, carrinho, pedidos, preferências e notificações | REST e SSE com Gateway |
+| Gateway | Autenticação, pedidos, outboxes, inbox e SSE por cliente | REST com Estoque; eventos RabbitMQ |
+| Estoque | Catálogo persistido, reserva e devolução | REST interno e RabbitMQ |
+| Pagamento | Cobranças, webhook, decisão e expiração | REST com Mock e RabbitMQ |
+| Mock de Pagamento | Checkout e escolha de aprovação/recusa | REST e webhook HTTP POST |
+| Entrega | Nota fiscal e despacho simulados | RabbitMQ |
+| Promoções | Interesses, ofertas e jobs de e-mail | RabbitMQ e API Resend |
 
-### Filas
+PostgreSQL é uma única instância local com schemas de responsabilidade separados:
+`gateway`, `estoque`, `pagamento`, `entrega` e `promocoes`.
+Os serviços não precisam consultar diretamente as tabelas uns dos outros no fluxo normal.
 
-| Fila | Consumidor | Eventos principais |
+Sequência de um pedido:
+
+1. Frontend envia o pedido por REST; Gateway grava pedido e intenção de evento na mesma transação.
+2. Publicador da outbox envia `pedido.criado`; Estoque verifica e reserva os itens.
+3. Estoque publica `pedido.estoque_ok` ou `estoque.indisponivel`.
+4. Pagamento solicita a cobrança ao Mock e publica a disponibilidade do checkout.
+5. Usuário abre o checkout em nova aba; Mock envia a decisão ao webhook de Pagamento.
+6. Pagamento publica aprovação ou recusa. Aprovação permite despacho pela Entrega.
+7. Gateway consome os resultados, atualiza o banco e notifica o cliente por SSE.
+8. Recusa ou expiração leva ao cancelamento e à compensação do estoque.
+
+## RabbitMQ
+
+| Exchange | Tipo | Uso |
 |---|---|---|
-| `principal` | Principal | Respostas de estoque, pagamento e entrega |
-| `estoque` | Estoque | `pedido.criado` e `pedido.excluido` |
-| `pagamento` | Pagamento | `pedido.estoque_ok` |
-| `entrega` | Entrega | `pagamento.aprovado` |
-| `consumidor.01` | Consumidor 1 | Promoções de Limpeza e Alimentos |
-| `consumidor.02` | Consumidor 2 | Promoções de todas as categorias |
+| `eCommerce` | `direct` | Pedidos, resultados e interesses |
+| `Promocoes` | `topic` | Ofertas por categoria |
 
-### Eventos do E-Commerce
-
-| Routing key | Produtor | Consumidores |
-|---|---|---|
-| `pedido.criado` | Principal | Estoque |
-| `pedido.excluido` | Principal | Estoque |
-| `pedido.estoque_ok` | Estoque | Principal e Pagamento |
-| `estoque.indisponivel` | Estoque | Principal |
-| `pagamento.aprovado` | Pagamento | Principal e Entrega |
-| `pagamento.recusado` | Pagamento | Principal |
-| `pedido.enviado` | Entrega | Principal |
-
-### Eventos de promoção
-
-| Routing key | Categoria |
+| Fila | Routing keys |
 |---|---|
-| `promocao.categoria.limpeza` | Limpeza |
-| `promocao.categoria.alimentos` | Alimentos |
-| `promocao.categoria.eletronicos` | Eletrônicos |
-| `promocao.categoria.*` | Todas as categorias |
+| `estoque` | `pedido.criado`, `pedido.excluido` |
+| `pagamento` | `pedido.estoque_ok` |
+| `entrega` | `pagamento.aprovado` |
+| `gateway.pedidos.status` | `pedido.estoque_ok`, `estoque.indisponivel`, `pagamento.checkout_disponivel`, `pagamento.aprovado`, `pagamento.recusado`, `pedido.enviado` |
+| `promocoes.interesses` | `interesse.promocao` |
+| `promocoes.ofertas` | `promocao.categoria.*` |
 
-## Estrutura do projeto
+As categorias são alimentos, limpeza e eletronicos.
+Filas legadas `principal` e `consumidor.01/02` não são necessárias para o fluxo web.
+Elas podem acumular cópias se continuarem vinculadas sem consumidor: isso não
+representa automaticamente falha das filas do fluxo web. Não as purgue sem avaliar os dados.
 
-```text
-RabbitMQ_Ecommerce/
-├── cmd/
-│   ├── consumidores/
-│   ├── entrega/
-│   ├── estoque/
-│   ├── keygen/
-│   ├── pagamento/
-│   ├── principal/
-│   ├── promocoes/
-├── data/
-│   ├── inventory.json
-│   └── orders.json
-├── keys/
-│   ├── ms-entrega/
-│   ├── ms-estoque/
-│   ├── ms-pagamento/
-│   └── ms-principal/
-├── microservices/
-│   ├── ms-consumidores/
-│   ├── ms-entrega/
-│   ├── ms-estoque/
-│   ├── ms-pagamento/
-│   ├── ms-principal/
-│   └── ms-promocoes/
-├── utils/
-│   ├── cryptography/
-│   ├── events/
-│   ├── inventory/
-│   ├── misc/
-│   └── rabbitmq/
-├── go.mod
-└── go.sum
-```
+A topologia de pedidos é centralizada em `utils/rabbitmq/ecommerce_topology.go`.
+O preparo idempotente declara filas duráveis e bindings sem apagá-los.
+Atributos incompatíveis produzem erro; não se substituem filas automaticamente.
 
-Os diretórios dentro de `cmd` contêm os pontos de entrada dos processos. A lógica de cada microsserviço fica em `microservices`, enquanto os contratos de eventos e recursos compartilhados ficam em `utils`.
+### Assinaturas e confiabilidade
 
-## Tecnologias
+Todas as mensagens de negócio RabbitMQ do fluxo atual usam RSA-PSS com SHA-256.
+A assinatura cobre ID, tipo, produtor, instante e payload do envelope.
+O consumidor verifica assinatura, produtor autorizado e compatibilidade com a routing key.
+Assinatura não cifra o conteúdo: ela verifica autenticidade e integridade.
 
-- Go 1.27.1;
-- RabbitMQ;
-- Protocolo AMQP 0-9-1;
-- Biblioteca `github.com/rabbitmq/amqp091-go`;
-- RSA-PSS e SHA-256 da biblioteca padrão do Go;
-- Arquivos JSON para persistência local.
+Publicações confirmadas usam mensagens persistentes, `mandatory` e publisher confirms.
+Confirmação do broker não significa processamento pelo consumidor nem entrega de e-mail.
+Para eventos distribuídos a mais de uma fila, preparar todos os bindings é necessário:
+`mandatory` sozinho só detecta ausência de qualquer rota.
 
-## Pré-requisitos
+O sistema combina outboxes, inbox, confirmação manual e idempotência.
+A garantia é processamento tolerante a reentregas, não entrega exatamente uma vez.
+Envelopes persistidos mantêm identidade e assinatura nas novas tentativas.
 
-- Go instalado e disponível no `PATH`;
-- RabbitMQ em execução;
-- Plugin de gerenciamento do RabbitMQ habilitado, caso a interface web seja utilizada;
-- Portas `5672` e `15672` disponíveis.
+Falhas transitórias podem ser retentadas; resultados pendentes são recuperados por workers.
+Alguns consumidores usam filas `<fila>.revisao` após esgotar tentativas.
+Outboxes/inbox também podem ficar em `PENDENTE_REVISAO` no banco.
+Filas de revisão e registros de revisão SQL são mecanismos diferentes.
+Não reenvie mensagens ou altere status manualmente sem diagnosticar a causa.
 
-Por padrão, a aplicação utiliza:
+## Estrutura
 
-```text
-AMQP:       amqp://guest:guest@localhost:5672/
-Management: http://localhost:15672
-```
+- `cmd/`: pontos de entrada dos programas.
+- `frontend/src/`: telas, cliente REST, SSE e estilos.
+- `microservices/ms-gateway/`: autenticação, catálogo, pedidos e preferências.
+- `microservices/ms-estoque/`, `ms-pagamento/`, `ms-entrega/`, `ms-promocoes/`: regras dos serviços.
+- `microservices/mock-pagamento/`: provedor simulado.
+- `utils/events/`, `utils/cryptography/`, `utils/rabbitmq/`, `utils/webhook/`: contratos, assinaturas e transporte.
+- `migrations/`: alterações SQL numeradas 001 a 016.
+- `scripts/start-dev.ps1`: inicializador do ambiente Windows.
+- `data/`: arquivos de base/legados; as ofertas ainda usam `inventory.json`.
 
-As credenciais padrão devem ser utilizadas somente em ambiente local.
+## Pré-requisitos e primeira preparação
 
-## Preparação
+Execute os comandos nesta pasta, que contém `go.mod` e `docker-compose.yml`.
 
-Clone o repositório e entre no diretório do projeto:
+- Go compatível com a versão declarada em `go.mod`.
+- Node.js/npm compatíveis com o frontend e suas dependências.
+- Docker Desktop aberto para executar PostgreSQL 17.
+- RabbitMQ nativo do Windows instalado, serviço `RabbitMQ` e painel de gerenciamento habilitado.
+- Windows PowerShell 5.1 ou superior.
 
-```powershell
-git clone <URL_DO_REPOSITORIO>
-cd RabbitMQ_Ecommerce
-```
+Não execute os brokers nativo e Docker simultaneamente nas mesmas portas.
+O inicializador foi feito para PostgreSQL no Docker e RabbitMQ nativo.
+Não use `docker compose up -d` sem especificar o serviço nesse ambiente.
 
-Baixe e valide as dependências:
+### Dependências
 
 ```powershell
 go mod download
 go mod verify
+
+Push-Location frontend
+npm ci
+Pop-Location
 ```
 
-Formate e compile todos os pacotes:
+### Configuração e segredos
 
-```powershell
-gofmt -w .
-go test ./...
-```
+Na primeira configuração, copie `.env.example` para `.env` somente se este ainda não existir.
+Nunca sobrescreva uma configuração existente por engano.
+O inicializador lê `.env` como valores literais; variáveis do terminal têm prioridade.
+Executar os programas Go diretamente não equivale a carregar automaticamente esse arquivo.
 
-## Geração e distribuição das chaves
+Configurações principais:
 
-Execute o gerador uma única vez, a partir da raiz do projeto:
+| Variável | Finalidade |
+|---|---|
+| `DATABASE_URL` | PostgreSQL local, banco `ecommerce`, porta 5432 |
+| `RABBITMQ_URL` | RabbitMQ local, porta 5672 |
+| `JWT_SECRET` | Assinatura de sessões; mínimo 32 bytes |
+| `PAYMENT_WEBHOOK_SECRET` | Mesmo segredo no Mock e Pagamento; mínimo 32 bytes |
+| `STOCK_SERVICE_URL` | `http://localhost:8081` |
+| `MOCK_PAYMENT_URL` | `http://localhost:8083` |
+| `PAYMENT_WEBHOOK_URL` | `http://localhost:8082/webhooks/payments` |
+| `MOCK_CHECKOUT_TTL` | Prazo do checkout, por exemplo `2m` ou `30m` |
+| `RESEND_FROM` | Remetente; no teste, `Event Market <onboarding@resend.dev>` |
+| `RESEND_TEST_RECIPIENT` | E-mail associado à conta Resend dona da API key |
+| `RESEND_API_KEY` | Chave privada de acesso à API externa, necessária somente para enviar |
+
+Use segredos aleatórios próprios, não os exemplos públicos.
+JWT, segredo de webhook, API key e chaves RSA têm funções diferentes.
+Preserve o JWT para manter sessões após reinício; alterá-lo exige novo login.
+Não publique `.env`, chaves privadas ou valores de segredos nos logs.
+
+Segredos ausentes são pedidos com entrada oculta pelo inicializador.
+Um segredo já configurado, mas curto, é rejeitado: ajuste o ambiente ou `.env`.
+Comentários ao final de valores e interpolação de variáveis não são suportados pelo leitor de `.env`.
+
+### Chaves RSA
+
+Em instalação nova, sem a pasta `keys`:
 
 ```powershell
 go run ./cmd/keygen
+go run ./cmd/keygen -promotions-only
 ```
 
-O comando gera os pares RSA de Principal, Estoque, Pagamento e Entrega e distribui as chaves públicas entre esses microsserviços. Ele recusa sobrescrever uma pasta `keys` existente.
+O primeiro gera pares de Principal, Estoque, Pagamento e Entrega e distribui chaves públicas.
+O segundo acrescenta o par de Promoções. Não regenere nem apague chaves já utilizadas
+apenas para tentar resolver um erro; eventos pendentes podem depender delas.
+O Gateway usa a identidade criptográfica de Principal no fluxo web.
 
-Cada serviço mantém sua chave privada localmente e recebe cópias das chaves públicas dos demais:
+### PostgreSQL e migrations
 
-```text
-keys/ms-principal/
-├── private.pem
-├── public.pem
-└── public_keys/
-    ├── ms-entrega.pem
-    ├── ms-estoque.pem
-    └── ms-pagamento.pem
+```powershell
+docker compose up -d postgres
+docker compose ps postgres
 ```
 
-Nunca envie ou versione os arquivos `private.pem`:
+Em volume novo, PostgreSQL executa as migrations montadas em
+`/docker-entrypoint-initdb.d` na inicialização.
+Em volume existente, subir o container não aplica migrations novas.
 
-```gitignore
-**/private.pem
-*.exe
+Confira o schema e aplique somente as migrations pendentes, em ordem e com
+`ON_ERROR_STOP=1`. Não reaplique todas indiscriminadamente nem remova o volume.
+Exemplo para um banco existente que ainda precisa da migration 016:
+
+```powershell
+docker compose exec -T postgres psql -U ecommerce -d ecommerce -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/016_business_input_snapshots.sql
 ```
 
-O novo publicador de Promoções também assina seus eventos. Para adicionar suas
-chaves sem substituir as existentes, execute `go run ./cmd/keygen -promotions-only`
-uma única vez. Os consumidores legados 1 e 2 não precisam de chave privada.
+A 016 acrescenta os snapshots de entrada em Estoque e Entrega, sem apagar dados.
+Reservas/entregas antigas sem snapshot não permitem comprovar igualdade de novas
+entradas; reentregas são rejeitadas nesse caso. Envelopes de saída armazenados
+continuam recuperáveis.
 
-## Assinatura digital
+## Inicialização no Windows
 
-Os eventos enviados pela exchange `eCommerce` seguem este processo:
+Feche os programas anteriores com Ctrl+C antes de iniciar.
+O script não instala dependências, gera chaves, aplica migrations ou encerra programas à força.
 
-1. O produtor serializa os campos assináveis do envelope;
-2. Calcula o hash SHA-256;
-3. Assina o hash com RSA-PSS e sua chave privada;
-4. Codifica a assinatura em Base64 e preenche `signature`;
-5. O consumidor identifica o produtor e carrega sua chave pública;
-6. Recalcula o hash e verifica a assinatura antes de executar o handler.
+```powershell
+# Conferência sem iniciar serviços nem solicitar segredos.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -Verificar
 
-São assinados os campos:
+# Fluxo web; sem envio real de e-mails e sem gerador automático.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -AbrirTerminais
 
-- `event_id`;
-- `event_type`;
-- `producer`;
-- `timestamp`;
-- `payload`.
+# Autoriza também e-mails REAIS, inclusive jobs antigos pendentes.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -AbrirTerminais -ComEmails
 
-O próprio campo `signature` não participa do cálculo. Eventos sem assinatura, assinados por uma chave incorreta ou alterados depois da assinatura são descartados sem reenvio.
+# Inclui ofertas periódicas.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -AbrirTerminais -ComEmails -PublicarOfertas -Categoria alimentos -Intervalo 60s
+```
 
-No fluxo web desta branch, `cmd/publish-promotions` assina as ofertas e o modo
-`cmd/promocoes -offers` valida a assinatura e a categoria antes de criar os
-envios. O publicador legado `cmd/promocoes` sem flags continua sem assinatura;
-suas mensagens serão rejeitadas pelo novo consumidor. Não usá-lo na demonstração
-do envio de e-mails.
+Oito terminais são abertos: Estoque, Mock, Pagamento, Entrega, interesses,
+ofertas, Gateway e frontend. O script aguarda saúde HTTP e consumidores nas
+seis filas. `-ComEmails` e `-PublicarOfertas` são opcionais para evitar disparos involuntários.
 
-## Execução
+Se o RabbitMQ do mesmo Compose estiver ativo, o script para somente esse
+container, preservando volumes, para usar o broker nativo.
+Se precisar iniciar o serviço Windows sem permissão suficiente, solicita que
+você o inicie manualmente como administrador; não há elevação automática.
 
-Para o fluxo web completo (Avaliação 02), siga o
-[roteiro de execução e demonstração](docs/demo/README.md). As instruções abaixo
-são da Avaliação 01.
+O checkout usa 2 minutos como padrão do script; `MOCK_CHECKOUT_TTL` do
+ambiente/`.env` prevalece, a menos que `-ValidadeCheckout` seja passado explicitamente.
+Exemplo: `-ValidadeCheckout 30m`.
 
-Execute todos os comandos a partir da raiz do projeto. Use um terminal separado para cada processo.
+| Acesso | Endereço |
+|---|---|
+| Frontend | http://localhost:5173 |
+| Gateway | http://localhost:8080 |
+| Catálogo interno do Estoque | http://localhost:8081/internal/products |
+| Pagamento | http://localhost:8082 |
+| Mock | http://localhost:8083 |
+| Painel RabbitMQ nativo | http://127.0.0.1:15672 |
 
-No fluxo web, `cmd/estoque` e `cmd/pagamento` já seguem os contratos da
-Avaliação 02 e precisam do PostgreSQL; o Pagamento também precisa de
-`PAYMENT_WEBHOOK_SECRET` e de `cmd/mock-pagamento`. Veja as
-[Etapas 13](docs/steps/13-estoque-postgres/README.md) e
-[14](docs/steps/14-pagamento-webhook/README.md). O menu do `cmd/principal`
-abaixo publica o formato antigo de pedido e não é mais aceito pelo Estoque.
+O script recusa configurações fora das portas/URLs locais previstas.
+Se falhar após abrir alguns terminais, eles ficam para diagnóstico: pare-os
+antes de repetir. Não há rollback automático dos processos já iniciados.
+Para encerrar, Ctrl+C em cada terminal; banco e RabbitMQ permanecem ativos.
+Não reinicie o Mock durante um checkout: as cobranças do Mock são em memória.
 
-Inicie os serviços consumidores antes de produzir pedidos:
+Sem o inicializador, configure o ambiente de cada terminal e execute:
 
 ```powershell
 go run ./cmd/estoque
-```
-
-```powershell
+go run ./cmd/mock-pagamento
 go run ./cmd/pagamento
-```
-
-```powershell
 go run ./cmd/entrega
+go run ./cmd/promocoes -interests
+go run ./cmd/promocoes -offers
+go run ./cmd/gateway
+# Em outro terminal, dentro de frontend:
+npm run dev
+# Opcional, em terminal separado:
+go run ./cmd/promocoes -emails
 ```
 
-Depois inicie o Principal:
+Cada comando acima é um processo separado. Principal e consumidores legados
+1/2 não são necessários; o menu legado de pedidos usa contratos antigos.
+
+## API REST e SSE
+
+| Método | Rota | Uso |
+|---|---|---|
+| POST | `/api/auth/register` | Cadastro |
+| POST | `/api/auth/login` | Login |
+| POST | `/api/auth/logout` | Logout |
+| GET | `/api/auth/me` | Sessão atual |
+| GET | `/api/products` | Catálogo consultado no Estoque |
+| POST | `/api/orders` | Criar pedido |
+| GET | `/api/orders` | Listar pedidos do cliente |
+| GET | `/api/orders/{orderId}` | Detalhes |
+| DELETE | `/api/orders/{orderId}` | Cancelamento permitido pela regra atual |
+| GET | `/api/orders/events` | Stream SSE autenticado |
+| GET | `/api/promotion-interests` | Preferências |
+| POST | `/api/promotion-interests` | Inscrição com categoria/e-mail |
+| DELETE | `/api/promotion-interests/{category}` | Cancelar interesse |
+
+IDs internos de pedidos são UUIDs; identificadores de exibição `PED-...`
+são usados nos contratos com os serviços.
+Pedidos, detalhes e SSE são vinculados ao usuário autenticado.
+
+`201` na criação significa que o pedido e a intenção do evento foram persistidos,
+não que estoque ou pagamento já foram concluídos. Repetir um POST pode criar
+outro pedido: idempotência do evento não é idempotência da requisição HTTP.
+
+O cancelamento manual só é permitido em `PENDENTE`, antes de preparar o envelope
+de criação. A transação retira essa intenção ainda não enviada e grava a compensação.
+Depois desse ponto, a API retorna 409 para não liberar estoque enquanto uma
+cobrança pode ser aprovada. Não há exclusão física de pedido, itens ou histórico.
+
+Pagamento é a única autoridade de expiração. A cobrança vencida gera
+`pagamento.recusado` com motivo `CHECKOUT_EXPIRED`; Gateway cancela e publica
+`pedido.excluido` para compensar. O antigo worker de expiração do Gateway não
+é iniciado em `cmd/gateway`. Aprovação e expiração disputam a mesma cobrança
+sob controle transacional, evitando decisões locais independentes.
+
+SSE envia mudanças após commit, apenas às conexões do cliente.
+Os avisos ficam empilhados no canto e cada um desaparece após oito segundos.
+Reconexão sincroniza o estado atual por REST, mas não reproduz obrigatoriamente
+todos os avisos transitórios perdidos enquanto o navegador esteve desconectado.
+A atualização automática do catálogo é separada do stream de pedidos.
+
+## Promoções e modo de teste
+
+Inscreva o e-mail permitido e uma categoria na interface. Interesses passam pela
+outbox do Gateway e são consumidos pelo MS Promoções.
+O consumidor de ofertas verifica assinatura/categoria e cria jobs idempotentes.
+O worker confere interesse ativo antes de enviar e registra resultado/tentativas.
+Cancelar interesse desativa a inscrição e cancela os jobs pendentes correspondentes.
+
+Publicação manual, com os consumidores já iniciados:
 
 ```powershell
-go run ./cmd/principal
+go run ./cmd/publish-promotions -once -category alimentos
+# Mesmo evento duas vezes para demonstrar deduplicação:
+go run ./cmd/publish-promotions -once -category alimentos -repeat 2
 ```
 
-O Principal disponibiliza um menu para consultar produtos, criar pedidos, excluir pedidos e consultar seus estados.
+O gerador usa `data/inventory.json`, não o catálogo REST real.
+Os dois modos de publicação de ofertas usam assinatura e confirmação do RabbitMQ.
+O modo legado `go run ./cmd/promocoes` sem flags também gera ofertas e pode
+alimentar o fluxo de e-mails; não o abra por engano em paralelo ao gerador escolhido.
 
-### Promoções
+Uma API key identifica a aplicação/conta Resend, não cada destinatário.
+Com `onboarding@resend.dev`, o teste se limita ao e-mail associado à conta dona
+da chave. Ter outra conta Resend não libera esse outro e-mail na mesma chave.
+O próprio código também restringe o destinatário a `RESEND_TEST_RECIPIENT`.
 
-Para o fluxo web com Resend, siga a [Etapa 12](docs/steps/12-promocoes-email/README.md).
-Ela documenta os processos separados `-interests`, `-offers`, `-emails` e o
-publicador manual/automático. Os comandos abaixo são da simulação legada.
+Para vários destinatários reais seria necessário verificar um domínio remetente,
+ajustar `RESEND_FROM` e adaptar a restrição de teste do código. Isso não foi habilitado.
+Regras do provedor: https://resend.com/docs/knowledge-base/403-error-resend-dev-domain
 
-Inicie primeiro os consumidores:
+`SENT` e um ID do provedor significam aceitação pela API, não prova de chegada
+à caixa de entrada. Verifique também a caixa de e-mail e spam na demonstração.
+Não zere tentativas nem recrie jobs antigos indiscriminadamente: a janela de
+idempotência do provedor é limitada e isso pode duplicar e-mails.
+
+## Validação e arquivos locais
 
 ```powershell
-go run ./cmd/consumidores 1
+go build ./...
+go vet ./...
+Push-Location frontend
+npm run build
+Pop-Location
+git diff --check
+git diff --cached --check
 ```
+
+Por decisão da equipe, arquivos com `_test` no nome e READMEs auxiliares ficam
+somente na máquina e são ignorados pelo Git. Apenas este README é central.
+Um clone novo não recebe esses testes: `go test ./...` sem arquivos de teste
+não comprova a mesma cobertura da máquina de desenvolvimento.
+A remoção de rastreamento não apaga arquivos locais nem o histórico Git anterior.
+
+Na máquina que mantém os testes, use banco isolado `ecommerce_events_test`:
 
 ```powershell
-go run ./cmd/consumidores 2
+$env:TEST_DATABASE_URL = "postgres://ecommerce:ecommerce@localhost:5432/ecommerce_events_test?sslmode=disable"
+Remove-Item Env:TEST_RABBITMQ_URL -ErrorAction SilentlyContinue
+go test ./... -count=1
 ```
 
-Depois inicie o produtor:
+Prepare esse banco separadamente com as migrations necessárias.
+Não aponte testes de integração ao banco da demonstração. Não execute a suíte
+inteira com `TEST_RABBITMQ_URL` apontando ao broker de negócio: alguns testes
+de interesses publicam eventos reais. Testes de broker devem ser selecionados
+e usar recursos isolados.
+
+Simulação do inicializador sem abrir programas nem ler segredos:
 
 ```powershell
-go run ./cmd/promocoes
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -AbrirTerminais -WhatIf
 ```
-
-O Consumidor 1 recebe promoções de Limpeza e Alimentos. O Consumidor 2 utiliza o padrão `promocao.categoria.*` e recebe promoções de todas as categorias.
-
-## Persistência local
-
-O projeto utiliza:
-
-- `data/inventory.json`: catálogo e quantidades em estoque;
-- `data/orders.json`: pedidos, próximo identificador e estados de processamento.
-
-O Estoque é responsável por persistir baixas e devoluções no inventário. O Principal persiste os pedidos e atualiza seus estados conforme os eventos recebidos.
-
-Essa persistência atende à simulação acadêmica local. Em uma implantação distribuída real, os microsserviços não deveriam compartilhar arquivos; cada serviço manteria seu próprio banco de dados ou armazenamento.
-
-
-
-## Verificação no RabbitMQ
-
-Acesse [http://localhost:15672](http://localhost:15672) e confira:
-
-- as exchanges `eCommerce` e `Promocoes`;
-- as filas declaradas;
-- os bindings e suas routing keys;
-- a quantidade de mensagens prontas e não confirmadas.
-
-## Observações
-
-- Exchanges e filas duráveis não garantem sozinhas entrega exatamente uma vez;
-- Consumidores usam confirmação manual (`Ack`/`Nack`);
-- Eventos inválidos não são reenfileirados;
-- Os handlers devem ser idempotentes para lidar com possíveis duplicações;
-- A URL do RabbitMQ é configurada por `RABBITMQ_URL`; usar credenciais locais somente na demonstração;
-- O uso de JSON como persistência não substitui transações de banco de dados ou o padrão transactional outbox.
-
-## Autores
-
-
-- Gabriel de Almeida Spadafora
-
-- Lucas de Lima Nogueira
 
 ## Licença
 

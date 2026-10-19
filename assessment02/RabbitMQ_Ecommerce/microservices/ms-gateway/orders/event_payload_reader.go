@@ -23,23 +23,8 @@ func ReadStockConfirmedPayload(
 		)
 	}
 
-	if strings.TrimSpace(payload.OrderID) == "" ||
-		strings.TrimSpace(payload.CustomerID) == "" {
-		return payload, fmt.Errorf("pedido e cliente são obrigatórios")
-	}
-
-	if payload.Total <= 0 ||
-		math.IsNaN(payload.Total) ||
-		math.IsInf(payload.Total, 0) {
-		return payload, fmt.Errorf("total deve ser positivo e finito")
-	}
-
-	if payload.Currency != "BRL" {
-		return payload, fmt.Errorf("moeda deve ser BRL")
-	}
-
-	if payload.ReservedAt.IsZero() {
-		return payload, fmt.Errorf("data da reserva é obrigatória")
+	if err := events.ValidateWebStockConfirmed(payload); err != nil {
+		return payload, err
 	}
 
 	return payload, nil

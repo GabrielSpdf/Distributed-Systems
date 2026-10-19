@@ -18,6 +18,9 @@ func BuildOrderCreatedEvent(
 	privateKey *rsa.PrivateKey,
 ) (events.EventEnvelope, error) {
 	payload := BuildOrderCreatedPayload(order)
+	if err := events.ValidateWebOrderCreated(payload); err != nil {
+		return events.EventEnvelope{}, fmt.Errorf("payload de criação inválido: %w", err)
+	}
 
 	return misc.BuildSignedEnvelope(
 		payload,

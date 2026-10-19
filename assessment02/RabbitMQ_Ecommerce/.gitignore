@@ -16,3 +16,10 @@ frontend/.vite/
 *.test
 coverage.out
 coverage.html
+
+# Documentacao auxiliar local; manter somente o README central versionado.
+[Rr][Ee][Aa][Dd][Mm][Ee]*
+!/README.md
+
+# Arquivos de teste mantidos apenas nesta maquina.
+*_test*

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
 	"RabbitMQ_Ecommerce/utils/events"
@@ -14,43 +13,6 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
-
-type EventPublisher struct {
-	channel    *amqp.Channel
-	privateKey *rsa.PrivateKey
-	mutex      sync.Mutex
-}
-
-func NewEventPublisher(
-	channel *amqp.Channel,
-	privateKey *rsa.PrivateKey,
-) *EventPublisher {
-	return &EventPublisher{
-		channel:    channel,
-		privateKey: privateKey,
-	}
-}
-
-func (publisher *EventPublisher) PublishCreated(order Order) error {
-	if publisher.channel == nil {
-		return fmt.Errorf("canal RabbitMQ não configurado")
-	}
-
-	event, err := BuildOrderCreatedEvent(order, publisher.privateKey)
-	if err != nil {
-		return fmt.Errorf("erro ao preparar pedido.criado: %w", err)
-	}
-
-	publisher.mutex.Lock()
-	defer publisher.mutex.Unlock()
-
-	return rabbitmq.PublishEvent(
-		publisher.channel,
-		events.ExchangeEcommerce,
-		events.OrderCreated,
-		event,
-	)
-}
 
 // Publica um envelope já assinado em um canal exclusivo desta tentativa.
 func PublishConfirmedEvent(
@@ -76,6 +38,10 @@ func PublishConfirmedEvent(
 	}
 	defer channel.Close()
 
+	if err := rabbitmq.PrepareEcommerceTopologyForEvent(channel, envelope.EventType); err != nil {
+		return fmt.Errorf("erro ao preparar destinos da outbox: %w", err)
+	}
+
 	if err := channel.Confirm(false); err != nil {
 		return fmt.Errorf("erro ao ativar confirmações: %w", err)
 	}
@@ -96,7 +62,7 @@ func PublishConfirmedEvent(
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("erro ao publicar compensação: %w", err)
+		return fmt.Errorf("erro ao publicar evento da outbox: %w", err)
 	}
 	if confirmation == nil {
 		return fmt.Errorf("confirmação da publicação não disponível")
@@ -189,7 +155,7 @@ func (repository *Repository) RunOutboxPublisher(
 		}
 
 		if handled {
-			log.Println("[INFO] Compensação publicada e registrada pela outbox")
+			log.Println("[INFO] Evento publicado e registrado pela outbox")
 			continue
 		}
 

@@ -1,7 +1,6 @@
 package orders
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -17,18 +16,15 @@ import (
 type HTTPHandler struct {
 	repository *Repository
 	stock      *catalog.StockClient
-	publisher  *EventPublisher
 }
 
 func NewHTTPHandler(
 	repository *Repository,
 	stock *catalog.StockClient,
-	publisher *EventPublisher,
 ) *HTTPHandler {
 	return &HTTPHandler{
 		repository: repository,
 		stock:      stock,
-		publisher:  publisher,
 	}
 }
 
@@ -117,15 +113,6 @@ func (handler *HTTPHandler) create(
 		return
 	}
 
-	if handler.publisher == nil {
-		writeError(
-			writer,
-			http.StatusServiceUnavailable,
-			"publicador de pedidos não configurado",
-		)
-		return
-	}
-
 	order, err := handler.repository.Create(
 		request.Context(),
 		userID,
@@ -143,39 +130,8 @@ func (handler *HTTPHandler) create(
 		return
 	}
 
-	if err := handler.publisher.PublishCreated(order); err != nil {
-		log.Printf(
-			"[ERRO] Publicação de pedido.criado para %s: %v",
-			order.ID,
-			err,
-		)
-
-		failureContext, cancel := context.WithTimeout(
-			context.Background(),
-			5*time.Second,
-		)
-		defer cancel()
-
-		updatedAt, failureErr := handler.repository.MarkProcessingFailed(
-			failureContext,
-			order.DatabaseID,
-		)
-		if failureErr != nil {
-			log.Printf(
-				"[ERRO] Registro da falha no pedido %s: %v",
-				order.ID,
-				failureErr,
-			)
-		} else {
-			order.Status = StatusProcessingFailed
-			order.UpdatedAt = updatedAt
-		}
-	} else {
-		log.Printf(
-			"[INFO] Publicação de pedido.criado executada para %s",
-			order.ID,
-		)
-	}
+	// 201 confirma pedido e outbox persistidos, não processamento pelo Estoque.
+	log.Printf("[INFO] Pedido %s e evento de criação salvos na outbox", order.ID)
 
 	addOrderLinks(&order)
 
@@ -299,7 +255,7 @@ func (handler *HTTPHandler) cancel(
 		writeError(
 			writer,
 			http.StatusConflict,
-			"pedido não pode ser cancelado no estado atual",
+			"o processamento já começou; não é mais possível cancelar este pedido",
 		)
 		return
 	}
@@ -325,8 +281,7 @@ func addOrderLinks(order *Order) {
 		},
 	}
 
-	if order.Status == StatusPending ||
-		order.Status == StatusStockConfirmed {
+	if order.Status == StatusPending && order.CanCancel {
 		order.Links["cancel"] = Link{
 			Href:   "/api/orders/" + order.ID,
 			Method: http.MethodDelete,

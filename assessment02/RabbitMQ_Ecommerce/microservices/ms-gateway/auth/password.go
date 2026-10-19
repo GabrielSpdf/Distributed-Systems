@@ -38,6 +38,9 @@ func HashPassword(password string) (string, error) {
 }
 
 func CheckPassword(passwordHash string, password string) bool {
+	if len(password) > maxPasswordBytes {
+		return false
+	}
 	return bcrypt.CompareHashAndPassword(
 		[]byte(passwordHash),
 		[]byte(password),

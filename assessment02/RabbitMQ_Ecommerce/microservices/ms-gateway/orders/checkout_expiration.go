@@ -11,11 +11,12 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// ExpireNextCheckout cancela um checkout vencido há mais de 10 minutos.
-// O MS Pagamento é a autoridade do prazo e normalmente expira a cobrança antes
-// (publicando pagamento.recusado com motivo CHECKOUT_EXPIRED); este executor é
-// só uma rede de segurança para quando o Pagamento estiver fora do ar.
+// ExpireNextCheckout é a operação histórica, não executada pelo Gateway.
+// Somente o MS Pagamento decide a expiração. Mantida como referência e teste.
+// Pode cancelar uma aprovação persistida que ainda não tenha sido publicada.
 // Retorna false quando não há pedido elegível.
+//
+// Deprecated: não chamar sem arbitragem coordenada com o MS Pagamento.
 func (repository *Repository) ExpireNextCheckout(
 	ctx context.Context,
 ) (bool, error) {

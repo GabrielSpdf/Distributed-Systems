@@ -6,6 +6,7 @@ import (
 	"os"
 
 	msconsumidores "RabbitMQ_Ecommerce/microservices/ms-consumidores"
+	"RabbitMQ_Ecommerce/utils/cryptography"
 	"RabbitMQ_Ecommerce/utils/events"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
 )
@@ -27,8 +28,16 @@ func main() {
 }
 
 func run(consumerType string) error {
+	publicKeys, err := cryptography.LoadPublicKeyRegistry(
+		map[string]string{
+			events.ProducerPromotions: "keys/ms-promocoes/public.pem",
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("erro ao carregar chave de Promoções: %w", err)
+	}
+
 	var promotionConsumer *msconsumidores.Runtime
-	var err error
 
 	if consumerType == "1" {
 		promotionConsumer, err = msconsumidores.InitializePromotionConsumer(false)
@@ -49,9 +58,10 @@ func run(consumerType string) error {
 	fmt.Printf("                      MICROSSERVIÇO CONSUMIDOR - %s               \n", consumerType)
 	fmt.Println("==================================================================")
 
-	return rabbitmq.ConsumeEvents(
+	return rabbitmq.ConsumeSignedEvents(
 		promotionConsumer.Channel,
 		promotionConsumer.QueueName,
+		publicKeys,
 		func(envelope events.EventEnvelope) error {
 			return msconsumidores.HandleConsumerEvent(envelope)
 		},

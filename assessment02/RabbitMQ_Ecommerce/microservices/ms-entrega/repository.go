@@ -29,7 +29,8 @@ const shipmentColumns = `
 	tracking_code,
 	shipped_at,
 	envelope,
-	published_at IS NOT NULL
+	published_at IS NOT NULL,
+	COALESCE(payment_payload::text, '')
 `
 
 func scanShipment(row pgx.Row) (Shipment, error) {
@@ -44,6 +45,7 @@ func scanShipment(row pgx.Row) (Shipment, error) {
 		&shipment.ShippedAt,
 		&shipment.Envelope,
 		&shipment.Published,
+		&shipment.PaymentPayload,
 	)
 	if err != nil {
 		return Shipment{}, err
@@ -85,8 +87,8 @@ func (repository *Repository) CreateShipment(
 	if _, err := repository.pool.Exec(
 		ctx,
 		`INSERT INTO entrega.shipments
-		     (order_id, customer_id, charge_id, invoice_id, tracking_code, shipped_at, envelope)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		     (order_id, customer_id, charge_id, invoice_id, tracking_code, shipped_at, envelope, payment_payload)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, '')::jsonb)
 		 ON CONFLICT (order_id) DO NOTHING`,
 		shipment.OrderID,
 		shipment.CustomerID,
@@ -95,6 +97,7 @@ func (repository *Repository) CreateShipment(
 		shipment.TrackingCode,
 		shipment.ShippedAt,
 		shipment.Envelope,
+		shipment.PaymentPayload,
 	); err != nil {
 		return Shipment{}, fmt.Errorf("erro ao gravar entrega: %w", err)
 	}
@@ -106,6 +109,9 @@ func (repository *Repository) CreateShipment(
 
 	if !exists {
 		return Shipment{}, fmt.Errorf("entrega do pedido %s não encontrada após gravação", shipment.OrderID)
+	}
+	if !sameShipmentInput(stored, shipment) {
+		return Shipment{}, fmt.Errorf("%w: pedido %s já tem entrega com dados diferentes", ErrInvalidPayment, shipment.OrderID)
 	}
 
 	return stored, nil

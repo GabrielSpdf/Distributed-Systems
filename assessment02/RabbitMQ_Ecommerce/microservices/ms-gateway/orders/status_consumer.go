@@ -111,41 +111,10 @@ func (repository *Repository) ConsumeStatusEvents(
 	}
 }
 
-const StatusQueueName = "gateway.pedidos.status"
+const StatusQueueName = events.QueueGatewayStatus
 
 func PrepareStatusQueue(channel *amqp.Channel) error {
-	if err := rabbitmq.DeclareExchange(
-		channel,
-		events.ExchangeEcommerce,
-		rabbitmq.ExchangeTypeDirect,
-	); err != nil {
-		return err
-	}
-
-	queue, err := rabbitmq.DeclareQueue(channel, StatusQueueName)
-	if err != nil {
-		return err
-	}
-
-	for _, routingKey := range []string{
-		events.OrderStockConfirmed,
-		events.StockUnavailable,
-		events.PaymentCheckoutAvailable,
-		events.PaymentApproved,
-		events.PaymentRefused,
-		events.OrderShipped,
-	} {
-		if err := rabbitmq.BindQueue(
-			channel,
-			queue.Name,
-			routingKey,
-			events.ExchangeEcommerce,
-		); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return rabbitmq.PrepareEcommerceTopology(channel)
 }
 
 func waitStatusLoop(ctx context.Context, delay time.Duration) bool {

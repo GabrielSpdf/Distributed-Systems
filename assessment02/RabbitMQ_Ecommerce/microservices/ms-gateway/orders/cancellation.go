@@ -15,10 +15,13 @@ import (
 )
 
 var ErrCancellationConflict = errors.New(
-	"pedido não pode ser cancelado no estado atual",
+	"cancelamento permitido somente antes de preparar o pedido para envio",
 )
 
 // Cancel retorna true quando cancelou e false para repetição já cancelada.
+// A retirada da criação não preparada disputa o mesmo lock da outbox que
+// PrepareOutboxEnvelope. Após persistir um envelope, a entrega já pode ter
+// ocorrido, mesmo sem confirmação ou atualização do status do pedido.
 func (repository *Repository) Cancel(
 	ctx context.Context,
 	userID string,
@@ -50,8 +53,22 @@ func (repository *Repository) Cancel(
 		return false, nil
 	}
 
-	if currentStatus != StatusPending &&
-		currentStatus != StatusStockConfirmed {
+	if currentStatus != StatusPending {
+		return false, ErrCancellationConflict
+	}
+
+	// Retira somente a intenção ainda não assinada. Se o publicador vencer,
+	// o DELETE espera o lock e reavalia envelope IS NULL: não cancela.
+	// Sem linha (pedido antigo), não há prova segura de que nunca foi enviado.
+	withdrawn, err := tx.Exec(ctx, `
+		DELETE FROM gateway.event_outbox
+		WHERE order_id = $1 AND event_type = $2
+		  AND status = 'PENDENTE' AND envelope IS NULL
+	`, databaseID, events.OrderCreated)
+	if err != nil {
+		return false, fmt.Errorf("erro ao retirar criação não enviada: %w", err)
+	}
+	if withdrawn.RowsAffected() != 1 {
 		return false, ErrCancellationConflict
 	}
 
@@ -156,9 +173,10 @@ func (repository *Repository) PrepareOutboxEnvelope(
 
 	var storedEventID, eventType string
 	var payloadData, envelopeData []byte
+	var createdAt time.Time
 
 	err = tx.QueryRow(ctx, `
-		SELECT event_id::text, event_type, payload, envelope
+		SELECT event_id::text, event_type, payload, envelope, created_at
 		FROM gateway.event_outbox
 		WHERE event_id = $1 AND status = 'PENDENTE'
 		FOR UPDATE
@@ -167,6 +185,7 @@ func (repository *Repository) PrepareOutboxEnvelope(
 		&eventType,
 		&payloadData,
 		&envelopeData,
+		&createdAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return events.EventEnvelope{}, ErrOutboxNotPending
@@ -177,7 +196,7 @@ func (repository *Repository) PrepareOutboxEnvelope(
 		)
 	}
 
-	if eventType != events.OrderDeleted {
+	if eventType != events.OrderDeleted && eventType != events.OrderCreated {
 		return events.EventEnvelope{}, fmt.Errorf(
 			"tipo de evento não suportado na outbox: %s", eventType,
 		)
@@ -201,16 +220,21 @@ func (repository *Repository) PrepareOutboxEnvelope(
 		return envelope, nil
 	}
 
-	var payload events.WebOrderDeletedPayload
-	if err := json.Unmarshal(payloadData, &payload); err != nil {
-		return events.EventEnvelope{}, fmt.Errorf(
-			"payload da outbox inválido: %w", err,
-		)
+	var envelope events.EventEnvelope
+	switch eventType {
+	case events.OrderCreated:
+		var payload events.WebOrderCreatedPayload
+		if err := json.Unmarshal(payloadData, &payload); err != nil {
+			return events.EventEnvelope{}, fmt.Errorf("payload de criação inválido: %w", err)
+		}
+		envelope, err = BuildStoredOrderCreatedEvent(storedEventID, payload, createdAt, privateKey)
+	case events.OrderDeleted:
+		var payload events.WebOrderDeletedPayload
+		if err := json.Unmarshal(payloadData, &payload); err != nil {
+			return events.EventEnvelope{}, fmt.Errorf("payload de compensação inválido: %w", err)
+		}
+		envelope, err = BuildOrderDeletedEvent(storedEventID, payload, privateKey)
 	}
-
-	envelope, err := BuildOrderDeletedEvent(
-		storedEventID, payload, privateKey,
-	)
 	if err != nil {
 		return events.EventEnvelope{}, err
 	}
