@@ -57,6 +57,12 @@ func publishRawConfirmed(
 	}
 	defer channel.Close()
 
+	if exchangeName == events.ExchangeEcommerce {
+		if err := PrepareEcommerceTopologyForEvent(channel, routingKey); err != nil {
+			return fmt.Errorf("erro ao preparar destinos de %s: %w", routingKey, err)
+		}
+	}
+
 	if err := channel.Confirm(false); err != nil {
 		return fmt.Errorf("erro ao ativar confirmações: %w", err)
 	}

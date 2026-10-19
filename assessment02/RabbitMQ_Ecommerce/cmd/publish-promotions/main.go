@@ -102,12 +102,6 @@ func run(
 	})
 	defer stopClose()
 
-	channel, err := connection.Channel()
-	if err != nil {
-		return err
-	}
-	defer channel.Close()
-
 	for {
 		if ctx.Err() != nil {
 			return nil
@@ -115,7 +109,7 @@ func run(
 
 		promotion := mspromocoes.GeneratePromotion(products)
 		eventID, err := mspromocoes.PublishSignedPromotion(
-			channel, promotion, privateKey, repeat,
+			ctx, connection, promotion, privateKey, repeat,
 		)
 		if err != nil {
 			if ctx.Err() != nil {

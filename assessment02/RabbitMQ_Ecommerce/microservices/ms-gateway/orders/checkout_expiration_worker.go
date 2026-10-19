@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+// RunCheckoutExpiration é o worker histórico, não iniciado pelo Gateway.
+// Deprecated: não reativar; somente o MS Pagamento decide a expiração.
 func (repository *Repository) RunCheckoutExpiration(ctx context.Context) {
 	for ctx.Err() == nil {
 		attemptCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

@@ -2,9 +2,7 @@ package mspromocoes
 
 import (
 	"RabbitMQ_Ecommerce/utils/events"
-	"RabbitMQ_Ecommerce/utils/misc"
 	"RabbitMQ_Ecommerce/utils/rabbitmq"
-	"fmt"
 	"log"
 	"math"
 	"math/rand"
@@ -81,30 +79,4 @@ var categoryRoutingKeys = map[string]string{
 func RoutingKeyForCategory(category string) (string, bool) {
 	routingKey, exists := categoryRoutingKeys[category]
 	return routingKey, exists
-}
-
-func PublishPromotion(
-	channel *amqp.Channel,
-	payload events.PromotionPayload,
-	routingKey string,
-) error {
-	envelope, err := misc.BuildEnvelope(
-		payload,
-		routingKey,
-		events.ProducerPromotions,
-	)
-	if err != nil {
-		return fmt.Errorf("erro ao montar envelope: %w", err)
-	}
-
-	if err := rabbitmq.PublishEvent(
-		channel,
-		events.ExchangePromotions,
-		routingKey,
-		envelope,
-	); err != nil {
-		return fmt.Errorf("erro ao enviar evento: %w", err)
-	}
-
-	return nil
 }

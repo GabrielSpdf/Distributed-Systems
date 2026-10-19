@@ -21,6 +21,7 @@ var (
 	ErrWebhookEventReused = errors.New("event_id do webhook já usado em outra cobrança")
 	ErrCheckoutExpired    = errors.New("decisão tomada depois do prazo do checkout")
 	ErrInvalidStockResult = errors.New("pedido.estoque_ok inválido")
+	ErrConflictingCharge  = errors.New("pedido já possui cobrança com dados diferentes")
 )
 
 // Charge is one row of pagamento.payment_charges. ID is the Mock charge_id.

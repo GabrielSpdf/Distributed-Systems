@@ -55,13 +55,14 @@ func (repository *Repository) Create(
 	)
 
 	order := Order{
-		UserID:   userID,
-		ID:       displayID,
-		Status:   StatusPending,
-		Items:    items,
-		Total:    float64(totalCents) / 100,
-		Currency: "BRL",
-		Links:    make(map[string]Link),
+		UserID:    userID,
+		ID:        displayID,
+		Status:    StatusPending,
+		CanCancel: true,
+		Items:     items,
+		Total:     float64(totalCents) / 100,
+		Currency:  "BRL",
+		Links:     make(map[string]Link),
 	}
 
 	const insertOrder = `
@@ -135,6 +136,12 @@ func (repository *Repository) Create(
 		return Order{}, fmt.Errorf("erro ao salvar histórico: %w", err)
 	}
 
+	// Pedido e intenção de publicação são confirmados juntos. O worker
+	// publica depois, inclusive se o processo cair antes de responder ao HTTP.
+	if err := enqueueOrderCreatedTx(ctx, tx, order); err != nil {
+		return Order{}, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return Order{}, fmt.Errorf("erro ao confirmar pedido: %w", err)
 	}
@@ -161,7 +168,13 @@ func (repository *Repository) ListByUser(
 			COALESCE(tracking_code, ''),
 			shipped_at,
 			created_at,
-			updated_at
+			updated_at,
+			status = 'PENDENTE' AND EXISTS (
+				SELECT 1 FROM gateway.event_outbox b
+				WHERE b.order_id = gateway.orders.id
+				  AND b.event_type = 'pedido.criado'
+				  AND b.status = 'PENDENTE' AND b.envelope IS NULL
+			)
 		FROM gateway.orders
 		WHERE user_id = $1
 		  AND is_deleted = FALSE
@@ -196,6 +209,7 @@ func (repository *Repository) ListByUser(
 			&order.ShippedAt,
 			&order.CreatedAt,
 			&order.UpdatedAt,
+			&order.CanCancel,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("erro ao ler pedido: %w", err)
@@ -290,7 +304,13 @@ func (repository *Repository) FindByID(
 			COALESCE(tracking_code, ''),
 			shipped_at,
 			created_at,
-			updated_at
+			updated_at,
+			status = 'PENDENTE' AND EXISTS (
+				SELECT 1 FROM gateway.event_outbox b
+				WHERE b.order_id = gateway.orders.id
+				  AND b.event_type = 'pedido.criado'
+				  AND b.status = 'PENDENTE' AND b.envelope IS NULL
+			)
 		FROM gateway.orders
 		WHERE display_id = $1
 		  AND user_id = $2
@@ -320,6 +340,7 @@ func (repository *Repository) FindByID(
 		&order.ShippedAt,
 		&order.CreatedAt,
 		&order.UpdatedAt,
+		&order.CanCancel,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Order{}, ErrOrderNotFound

@@ -108,6 +108,11 @@ func runEmailMode() error {
 }
 
 func run() error {
+	privateKey, err := cryptography.LoadPrivateKey("keys/ms-promocoes/private.pem")
+	if err != nil {
+		return fmt.Errorf("erro ao carregar chave de Promoções: %w", err)
+	}
+
 	promotionService, err := mspromocoes.InitializePromotionService()
 	if err != nil {
 		return err
@@ -125,6 +130,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if len(inventoryData.Products) == 0 {
+		return fmt.Errorf("nenhum produto disponível para gerar promoções")
+	}
 
 	for {
 		promotion := mspromocoes.GeneratePromotion(inventoryData.Products)
@@ -139,7 +147,7 @@ func run() error {
 			continue
 		}
 
-		if err := mspromocoes.PublishPromotion(promotionService.Channel, promotion, routingKey); err != nil {
+		if _, err := mspromocoes.PublishSignedPromotion(context.Background(), promotionService.Connection, promotion, privateKey); err != nil {
 			return fmt.Errorf("erro ao publicar promoção: %w", err)
 		}
 

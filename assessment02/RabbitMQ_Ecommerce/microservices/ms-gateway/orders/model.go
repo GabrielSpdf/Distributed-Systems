@@ -38,6 +38,7 @@ type Link struct {
 type Order struct {
 	DatabaseID        string          `json:"-"`
 	UserID            string          `json:"-"`
+	CanCancel         bool            `json:"-"`
 	ID                string          `json:"id"`
 	Status            string          `json:"status"`
 	Items             []OrderItem     `json:"items"`

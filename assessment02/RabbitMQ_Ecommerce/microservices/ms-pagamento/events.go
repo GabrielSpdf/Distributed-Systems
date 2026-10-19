@@ -3,9 +3,9 @@ package mspagamento
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
-	"math"
 	"time"
 
 	"RabbitMQ_Ecommerce/utils/events"
@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	defaultCurrency     = "BRL"
 	eventHandlerTimeout = 30 * time.Second
 )
 
@@ -93,10 +92,20 @@ func (handler *EventHandler) Handle(envelope events.EventEnvelope) error {
 			ExpiresAt:   mockCharge.ExpiresAt,
 		})
 		if err != nil {
+			if errors.Is(err, ErrConflictingCharge) {
+				return rabbitmq.Permanent(err)
+			}
 			return err
 		}
 
 		log.Printf("[SUCESSO] Cobrança %s criada para o pedido %s", charge.ID, charge.OrderID)
+	}
+
+	if !sameChargeBusinessData(charge, Charge{
+		OrderID: payload.OrderID, CustomerID: payload.CustomerID,
+		Amount: payload.Total, Currency: payload.Currency,
+	}) {
+		return rabbitmq.Permanent(fmt.Errorf("%w: pedido %s", ErrConflictingCharge, payload.OrderID))
 	}
 
 	if charge.CheckoutPublished {
@@ -114,20 +123,8 @@ func readStockConfirmed(data json.RawMessage) (events.WebStockConfirmedPayload, 
 		return payload, fmt.Errorf("%w: %v", ErrInvalidStockResult, err)
 	}
 
-	if payload.OrderID == "" || payload.CustomerID == "" {
-		return payload, fmt.Errorf("%w: pedido e cliente são obrigatórios", ErrInvalidStockResult)
-	}
-
-	if payload.Total <= 0 || math.IsNaN(payload.Total) || math.IsInf(payload.Total, 0) {
-		return payload, fmt.Errorf("%w: total deve ser positivo", ErrInvalidStockResult)
-	}
-
-	if payload.Currency == "" {
-		payload.Currency = defaultCurrency
-	}
-
-	if payload.Currency != defaultCurrency {
-		return payload, fmt.Errorf("%w: moeda deve ser BRL", ErrInvalidStockResult)
+	if err := events.ValidateWebStockConfirmed(payload); err != nil {
+		return payload, fmt.Errorf("%w: %v", ErrInvalidStockResult, err)
 	}
 
 	return payload, nil

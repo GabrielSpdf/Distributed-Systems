@@ -3,6 +3,7 @@ package msentrega
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -85,6 +86,9 @@ func (handler *EventHandler) Handle(envelope events.EventEnvelope) error {
 
 		shipment, err = handler.store.CreateShipment(ctx, shipment)
 		if err != nil {
+			if errors.Is(err, ErrInvalidPayment) {
+				return rabbitmq.Permanent(err)
+			}
 			return err
 		}
 
@@ -96,9 +100,16 @@ func (handler *EventHandler) Handle(envelope events.EventEnvelope) error {
 		)
 	}
 
-	if shipment.CustomerID != payment.CustomerID {
+	snapshot, err := paymentSnapshot(payment)
+	if err != nil {
+		return rabbitmq.Permanent(fmt.Errorf("%w: %v", ErrInvalidPayment, err))
+	}
+	if !sameShipmentInput(shipment, Shipment{
+		OrderID: payment.OrderID, CustomerID: payment.CustomerID,
+		ChargeID: payment.ChargeID, PaymentPayload: snapshot,
+	}) {
 		return rabbitmq.Permanent(fmt.Errorf(
-			"%w: pedido %s já tem entrega para outro cliente",
+			"%w: pedido %s tem aprovação divergente ou original ausente",
 			ErrInvalidPayment,
 			payment.OrderID,
 		))
@@ -125,6 +136,10 @@ func (handler *EventHandler) Handle(envelope events.EventEnvelope) error {
 func (handler *EventHandler) newShipment(
 	payment events.WebPaymentResultPayload,
 ) (Shipment, error) {
+	snapshot, err := paymentSnapshot(payment)
+	if err != nil {
+		return Shipment{}, fmt.Errorf("%w: %v", ErrInvalidPayment, err)
+	}
 	shippedAt := handler.now().UTC()
 
 	invoiceID, err := newInvoiceID(shippedAt)
@@ -154,13 +169,14 @@ func (handler *EventHandler) newShipment(
 	}
 
 	return Shipment{
-		OrderID:      payment.OrderID,
-		CustomerID:   payment.CustomerID,
-		ChargeID:     payment.ChargeID,
-		InvoiceID:    invoiceID,
-		TrackingCode: trackingCode,
-		ShippedAt:    shippedAt,
-		Envelope:     string(encoded),
+		OrderID:        payment.OrderID,
+		CustomerID:     payment.CustomerID,
+		ChargeID:       payment.ChargeID,
+		InvoiceID:      invoiceID,
+		TrackingCode:   trackingCode,
+		ShippedAt:      shippedAt,
+		Envelope:       string(encoded),
+		PaymentPayload: snapshot,
 	}, nil
 }
 

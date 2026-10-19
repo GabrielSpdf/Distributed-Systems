@@ -137,6 +137,11 @@ func (repository *Repository) SaveCharge(
 	if !exists {
 		return Charge{}, fmt.Errorf("cobrança do pedido %s não encontrada após gravação", charge.OrderID)
 	}
+	if !sameChargeBusinessData(stored, charge) || stored.ID != charge.ID ||
+		stored.CheckoutURL != charge.CheckoutURL ||
+		!stored.ExpiresAt.Truncate(time.Microsecond).Equal(charge.ExpiresAt.Truncate(time.Microsecond)) {
+		return Charge{}, fmt.Errorf("%w: pedido %s", ErrConflictingCharge, charge.OrderID)
+	}
 
 	return stored, nil
 }

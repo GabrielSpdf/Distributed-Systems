@@ -1,18 +1,32 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/mail"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 const sessionCookieName = "session"
+const maxAuthBodyBytes = 16 * 1024
+const maxNameCharacters = 120
+const maxEmailBytes = 255
+
+// UserStore permite testar a validação HTTP sem consultar o banco.
+type UserStore interface {
+	Create(context.Context, string, string, string) (User, error)
+	FindByEmail(context.Context, string) (User, error)
+	FindByID(context.Context, string) (User, error)
+}
 
 type HTTPHandler struct {
-	users  *UserRepository
+	users  UserStore
 	tokens *TokenManager
 }
 
@@ -32,7 +46,7 @@ type errorResponse struct {
 }
 
 func NewHTTPHandler(
-	users *UserRepository,
+	users UserStore,
 	tokens *TokenManager,
 ) *HTTPHandler {
 	return &HTTPHandler{
@@ -69,23 +83,19 @@ func (handler *HTTPHandler) register(
 ) {
 	var input registerRequest
 
-	if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
-		writeError(
-			writer,
-			http.StatusBadRequest,
-			"JSON inválido",
-		)
+	if !decodeAuthJSON(writer, request, &input) {
 		return
 	}
 
 	input.Name = strings.TrimSpace(input.Name)
 	input.Email = normalizeEmail(input.Email)
 
-	if input.Name == "" {
+	if input.Name == "" || utf8.RuneCountInString(input.Name) > maxNameCharacters ||
+		strings.IndexFunc(input.Name, unicode.IsControl) >= 0 {
 		writeError(
 			writer,
 			http.StatusBadRequest,
-			"nome é obrigatório",
+			"nome deve ter de 1 a 120 caracteres, sem caracteres de controle",
 		)
 		return
 	}
@@ -101,6 +111,10 @@ func (handler *HTTPHandler) register(
 
 	passwordHash, err := HashPassword(input.Password)
 	if err != nil {
+		if !errors.Is(err, ErrPasswordTooShort) && !errors.Is(err, ErrPasswordTooLong) {
+			writeError(writer, http.StatusInternalServerError, "erro ao proteger senha")
+			return
+		}
 		writeError(
 			writer,
 			http.StatusBadRequest,
@@ -142,12 +156,7 @@ func (handler *HTTPHandler) login(
 ) {
 	var input loginRequest
 
-	if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
-		writeError(
-			writer,
-			http.StatusBadRequest,
-			"JSON inválido",
-		)
+	if !decodeAuthJSON(writer, request, &input) {
 		return
 	}
 
@@ -159,6 +168,15 @@ func (handler *HTTPHandler) login(
 			http.StatusBadRequest,
 			"e-mail e senha são obrigatórios",
 		)
+		return
+	}
+
+	if !validEmail(input.Email) {
+		writeError(writer, http.StatusBadRequest, "e-mail inválido")
+		return
+	}
+	if len(input.Password) > maxPasswordBytes {
+		writeError(writer, http.StatusBadRequest, ErrPasswordTooLong.Error())
 		return
 	}
 
@@ -294,9 +312,33 @@ func (handler *HTTPHandler) logout(
 }
 
 func validEmail(email string) bool {
+	if len(email) > maxEmailBytes || strings.IndexFunc(email, unicode.IsControl) >= 0 {
+		return false
+	}
 	address, err := mail.ParseAddress(email)
 
 	return err == nil && address.Address == email
+}
+
+// Limita também espaços e conteúdo extra após o primeiro objeto.
+func decodeAuthJSON(writer http.ResponseWriter, request *http.Request, target any) bool {
+	request.Body = http.MaxBytesReader(writer, request.Body, maxAuthBodyBytes)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	err := decoder.Decode(target)
+	if err == nil {
+		err = decoder.Decode(&struct{}{})
+		if err == io.EOF {
+			return true
+		}
+	}
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		writeError(writer, http.StatusRequestEntityTooLarge, "corpo da requisição excede 16 KiB")
+	} else {
+		writeError(writer, http.StatusBadRequest, "envie somente um objeto JSON válido, sem campos extras")
+	}
+	return false
 }
 
 func writeError(

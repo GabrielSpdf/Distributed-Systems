@@ -106,11 +106,6 @@ func run() error {
 		return fmt.Errorf("erro ao carregar chave do Principal: %w", err)
 	}
 
-	orderPublisher := gatewayorders.NewEventPublisher(
-		publisherChannel,
-		privateKey,
-	)
-
 	tokenManager, err := gatewayauth.NewTokenManager(
 		configuration.JWTSecret,
 	)
@@ -145,7 +140,7 @@ func run() error {
 	statusContext, cancelStatus := context.WithCancel(context.Background())
 	var statusWorkers sync.WaitGroup
 
-	statusWorkers.Add(4)
+	statusWorkers.Add(3)
 
 	go func() {
 		defer statusWorkers.Done()
@@ -170,11 +165,6 @@ func run() error {
 		)
 	}()
 
-	go func() {
-		defer statusWorkers.Done()
-		orderRepository.RunCheckoutExpiration(statusContext)
-	}()
-
 	defer func() {
 		cancelStatus()
 		statusWorkers.Wait()
@@ -183,7 +173,6 @@ func run() error {
 	orderHandler := gatewayorders.NewHTTPHandler(
 		orderRepository,
 		stockClient,
-		orderPublisher,
 	)
 
 	authenticatedOrderRoutes := authenticationHandler.RequireAuth(

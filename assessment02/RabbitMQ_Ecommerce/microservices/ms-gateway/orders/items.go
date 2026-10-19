@@ -2,13 +2,11 @@ package orders
 
 import (
 	"fmt"
-	"math"
 	"strings"
 
 	"RabbitMQ_Ecommerce/microservices/ms-gateway/catalog"
+	"RabbitMQ_Ecommerce/utils/events"
 )
-
-const maxTotalCents int64 = 999999999999
 
 func PrepareItems(
 	input []CreateOrderItem,
@@ -58,27 +56,18 @@ func PrepareItems(
 			)
 		}
 
-		priceCents := math.Round(product.Price * 100)
-
-		if math.IsNaN(priceCents) ||
-			math.IsInf(priceCents, 0) ||
-			priceCents < 0 ||
-			priceCents > float64(maxTotalCents) {
-			return nil, 0, fmt.Errorf(
-				"preço inválido para %s",
-				productID,
-			)
+		lineCents, err := events.OrderItemTotalCents(events.WebOrderItem{
+			ProductID: product.ID, ProductName: product.Name,
+			Quantity: requested.Quantity, UnitPrice: product.Price,
+		})
+		if err != nil {
+			return nil, 0, fmt.Errorf("produto %s: %w", productID, err)
 		}
-
-		unitCents := int64(priceCents)
-		quantity := int64(requested.Quantity)
-
-		if unitCents > 0 &&
-			quantity > (maxTotalCents-totalCents)/unitCents {
+		if lineCents > events.MaxOrderTotalCents-totalCents {
 			return nil, 0, fmt.Errorf("valor do pedido excede o limite permitido")
 		}
-
-		totalCents += unitCents * quantity
+		totalCents += lineCents
+		unitCents := lineCents / int64(requested.Quantity)
 
 		items = append(items, OrderItem{
 			ProductID:   product.ID,

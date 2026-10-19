@@ -72,6 +72,12 @@ func InitializePaymentService() (
 	}
 	log.Println("[SUCESSO] Exchanges declaradas")
 
+	if err := rabbitmq.PrepareEcommerceTopology(channel); err != nil {
+		channel.Close()
+		connection.Close()
+		return nil, fmt.Errorf("erro ao preparar topologia completa: %w", err)
+	}
+
 	paymentQueue, err := rabbitmq.DeclareQueue(
 		channel,
 		events.QueuePayment,

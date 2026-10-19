@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	defaultCurrency     = "BRL"
 	insufficientStock   = "Estoque insuficiente"
 	eventHandlerTimeout = 10 * time.Second
 	pendingMinimumAge   = 5 * time.Second
@@ -22,7 +21,7 @@ const (
 
 // ReservationStore is what the event handler needs from the database.
 type ReservationStore interface {
-	Reserve(ctx context.Context, orderID string, items []ReservationItem) (ReservationResult, error)
+	ReserveOrder(ctx context.Context, payload events.WebOrderCreatedPayload) (ReservationResult, error)
 	Release(ctx context.Context, orderID string) (string, error)
 	SaveResultEnvelope(ctx context.Context, orderID string, envelope string) (string, error)
 	MarkResultPublished(ctx context.Context, orderID string) error
@@ -91,28 +90,11 @@ func (handler *EventHandler) handleOrderCreated(
 		return rabbitmq.Permanent(fmt.Errorf("erro ao desserializar pedido.criado: %w", err))
 	}
 
-	if payload.OrderID == "" {
-		return rabbitmq.Permanent(fmt.Errorf("pedido.criado sem order_id"))
+	if err := events.ValidateWebOrderCreated(payload); err != nil {
+		return rabbitmq.Permanent(fmt.Errorf("pedido.criado inválido: %w", err))
 	}
 
-	if payload.CustomerID == "" {
-		return rabbitmq.Permanent(fmt.Errorf("pedido.criado %s sem customer_id", payload.OrderID))
-	}
-
-	if len(payload.Items) == 0 {
-		return rabbitmq.Permanent(fmt.Errorf("pedido.criado %s sem itens", payload.OrderID))
-	}
-
-	items := make([]ReservationItem, 0, len(payload.Items))
-
-	for _, item := range payload.Items {
-		items = append(items, ReservationItem{
-			ProductID: item.ProductID,
-			Quantity:  item.Quantity,
-		})
-	}
-
-	result, err := handler.store.Reserve(ctx, payload.OrderID, items)
+	result, err := handler.store.ReserveOrder(ctx, payload)
 	if errors.Is(err, ErrInvalidOrder) {
 		return rabbitmq.Permanent(fmt.Errorf("pedido %s: %w", payload.OrderID, err))
 	}
@@ -182,16 +164,11 @@ func resultEvent(
 	result ReservationResult,
 ) (string, any, bool) {
 	if result.Status == ReservationReserved {
-		currency := payload.Currency
-		if currency == "" {
-			currency = defaultCurrency
-		}
-
 		return events.OrderStockConfirmed, events.WebStockConfirmedPayload{
 			OrderID:    payload.OrderID,
 			CustomerID: payload.CustomerID,
 			Total:      payload.Total,
-			Currency:   currency,
+			Currency:   payload.Currency,
 			ReservedAt: result.ReservedAt,
 		}, true
 	}
