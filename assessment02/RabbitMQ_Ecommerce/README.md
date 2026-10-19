@@ -1,11 +1,14 @@
-# Event Market - E-commerce com REST, RabbitMQ e SSE
+# Event Market - E-commerce Web
 
-Aplicação acadêmica de Sistemas Distribuídos da UTFPR, evolução da Avaliação 01.
-Frontend em React/TypeScript; API Gateway e microsserviços em Go.
-O fluxo atual persiste dados no PostgreSQL, usa RabbitMQ para eventos,
-SSE para atualizações no navegador, Mock de Pagamento com webhook e Resend para promoções.
+Sistema distribuído de e-commerce desenvolvido como evolução do Trabalho 01
+na disciplina de Sistemas Distribuídos da UTFPR.
 
-Autores: Gabriel de Almeida Spadafora e Lucas de Lima Nogueira.
+O projeto utiliza frontend React/TypeScript e microsserviços em Go, combinando
+REST para consultas e ações, RabbitMQ para processamento assíncrono e SSE para
+atualizações em tempo real. O fluxo inclui PostgreSQL, checkout com webhook,
+entrega simulada e promoções pela API externa Resend.
+
+[Voltar ao repositório](../../README.md) · [Consultar o Trabalho 01](../../assessment01/RabbitMQ_Ecommerce/README.md)
 
 ## Funcionalidades
 
@@ -22,7 +25,18 @@ Autores: Gabriel de Almeida Spadafora e Lucas de Lima Nogueira.
 Limitação mantida para a demonstração: o envio real de promoções é restrito
 ao destinatário de teste configurado. Não está habilitado para qualquer e-mail.
 
-## Arquitetura e responsabilidades
+## Arquitetura
+
+<p align="center">
+  <img
+    src="docs/architecture-web.png"
+    alt="Arquitetura do Event Market com frontend, API Gateway, RabbitMQ, microsserviços, Mock de Pagamento e API de e-mail"
+    width="900"
+  >
+</p>
+
+O diagrama apresenta a visão geral das integrações. Além das conexões ilustradas,
+o Gateway consulta o catálogo diretamente no MS Estoque via REST.
 
 | Componente | Responsabilidade | Comunicação |
 |---|---|---|
@@ -49,12 +63,17 @@ Sequência de um pedido:
 7. Gateway consome os resultados, atualiza o banco e notifica o cliente por SSE.
 8. Recusa ou expiração leva ao cancelamento e à compensação do estoque.
 
-## RabbitMQ
+As mensagens são publicadas em exchanges usando routing keys; o RabbitMQ
+encaminha cada evento às filas com bindings compatíveis.
+
+### Exchanges
 
 | Exchange | Tipo | Uso |
 |---|---|---|
 | `eCommerce` | `direct` | Pedidos, resultados e interesses |
 | `Promocoes` | `topic` | Ofertas por categoria |
+
+### Filas
 
 | Fila | Routing keys |
 |---|---|
@@ -74,41 +93,94 @@ A topologia de pedidos é centralizada em `utils/rabbitmq/ecommerce_topology.go`
 O preparo idempotente declara filas duráveis e bindings sem apagá-los.
 Atributos incompatíveis produzem erro; não se substituem filas automaticamente.
 
-### Assinaturas e confiabilidade
+### Eventos do e-commerce
 
-Todas as mensagens de negócio RabbitMQ do fluxo atual usam RSA-PSS com SHA-256.
-A assinatura cobre ID, tipo, produtor, instante e payload do envelope.
-O consumidor verifica assinatura, produtor autorizado e compatibilidade com a routing key.
-Assinatura não cifra o conteúdo: ela verifica autenticidade e integridade.
+| Routing key | Produtor | Consumidores do fluxo web |
+|---|---|---|
+| `pedido.criado` | Gateway (identidade Principal) | Estoque |
+| `pedido.excluido` | Gateway (identidade Principal) | Estoque |
+| `pedido.estoque_ok` | Estoque | Gateway e Pagamento |
+| `estoque.indisponivel` | Estoque | Gateway |
+| `pagamento.checkout_disponivel` | Pagamento | Gateway |
+| `pagamento.aprovado` | Pagamento | Gateway e Entrega |
+| `pagamento.recusado` | Pagamento | Gateway |
+| `pedido.enviado` | Entrega | Gateway |
+| `interesse.promocao` | Gateway (identidade Principal) | Promoções |
 
-Publicações confirmadas usam mensagens persistentes, `mandatory` e publisher confirms.
-Confirmação do broker não significa processamento pelo consumidor nem entrega de e-mail.
-Para eventos distribuídos a mais de uma fila, preparar todos os bindings é necessário:
-`mandatory` sozinho só detecta ausência de qualquer rota.
+### Eventos de promoção
 
-O sistema combina outboxes, inbox, confirmação manual e idempotência.
-A garantia é processamento tolerante a reentregas, não entrega exatamente uma vez.
-Envelopes persistidos mantêm identidade e assinatura nas novas tentativas.
+| Routing key | Categoria |
+|---|---|
+| `promocao.categoria.limpeza` | Limpeza |
+| `promocao.categoria.alimentos` | Alimentos |
+| `promocao.categoria.eletronicos` | Eletrônicos |
+| `promocao.categoria.*` | Binding para todas as categorias |
 
-Falhas transitórias podem ser retentadas; resultados pendentes são recuperados por workers.
-Alguns consumidores usam filas `<fila>.revisao` após esgotar tentativas.
-Outboxes/inbox também podem ficar em `PENDENTE_REVISAO` no banco.
-Filas de revisão e registros de revisão SQL são mecanismos diferentes.
-Não reenvie mensagens ou altere status manualmente sem diagnosticar a causa.
+## Estrutura do projeto
 
-## Estrutura
+```text
+RabbitMQ_Ecommerce/
+├── cmd/
+│   ├── gateway/
+│   ├── estoque/
+│   ├── pagamento/
+│   ├── entrega/
+│   ├── mock-pagamento/
+│   ├── promocoes/
+│   ├── publish-promotions/
+│   ├── reprocessar/
+│   └── keygen/
+├── frontend/
+│   └── src/
+├── microservices/
+│   ├── ms-gateway/
+│   ├── ms-estoque/
+│   ├── ms-pagamento/
+│   ├── ms-entrega/
+│   ├── ms-promocoes/
+│   └── mock-pagamento/
+├── migrations/
+├── scripts/
+├── data/
+├── keys/                 # Local; não versionada
+├── utils/
+│   ├── config/
+│   ├── cryptography/
+│   ├── database/
+│   ├── events/
+│   ├── rabbitmq/
+│   └── webhook/
+├── .env.example
+├── docker-compose.yml
+├── go.mod
+├── go.sum
+└── README.md
+```
 
-- `cmd/`: pontos de entrada dos programas.
-- `frontend/src/`: telas, cliente REST, SSE e estilos.
-- `microservices/ms-gateway/`: autenticação, catálogo, pedidos e preferências.
-- `microservices/ms-estoque/`, `ms-pagamento/`, `ms-entrega/`, `ms-promocoes/`: regras dos serviços.
-- `microservices/mock-pagamento/`: provedor simulado.
-- `utils/events/`, `utils/cryptography/`, `utils/rabbitmq/`, `utils/webhook/`: contratos, assinaturas e transporte.
-- `migrations/`: alterações SQL numeradas 001 a 016.
-- `scripts/start-dev.ps1`: inicializador do ambiente Windows.
-- `data/`: arquivos de base/legados; as ofertas ainda usam `inventory.json`.
+A árvore destaca os componentes do fluxo web; comandos e arquivos legados
+também permanecem na base do projeto.
 
-## Pré-requisitos e primeira preparação
+Os diretórios de `cmd/` são os pontos de entrada. As regras ficam em
+`microservices/`; contratos e recursos compartilhados ficam em `utils/`.
+`frontend/src/` reúne telas, cliente REST, SSE e estilos.
+`migrations/` contém as alterações SQL 001 a 016 e `scripts/` contém
+o inicializador Windows. O gerador de ofertas ainda usa `data/inventory.json`.
+
+## Tecnologias
+
+- Go, na versão declarada em `go.mod`.
+- React, TypeScript e Vite.
+- RabbitMQ e protocolo AMQP 0-9-1.
+- Biblioteca `github.com/rabbitmq/amqp091-go`.
+- PostgreSQL 17 e driver `github.com/jackc/pgx/v5`.
+- REST/JSON, SSE e webhook HTTP.
+- RSA-PSS com SHA-256 para os eventos RabbitMQ.
+- HMAC-SHA-256 para autenticação do webhook.
+- JWT e bcrypt para autenticação de usuários.
+- Resend como API externa de e-mail.
+- Docker Compose e PowerShell para o ambiente local.
+
+## Pré-requisitos
 
 Execute os comandos nesta pasta, que contém `go.mod` e `docker-compose.yml`.
 
@@ -121,6 +193,14 @@ Execute os comandos nesta pasta, que contém `go.mod` e `docker-compose.yml`.
 Não execute os brokers nativo e Docker simultaneamente nas mesmas portas.
 O inicializador foi feito para PostgreSQL no Docker e RabbitMQ nativo.
 Não use `docker compose up -d` sem especificar o serviço nesse ambiente.
+
+## Preparação
+
+A partir da raiz do repositório:
+
+```powershell
+cd assessment02/RabbitMQ_Ecommerce
+```
 
 ### Dependências
 
@@ -165,7 +245,7 @@ Segredos ausentes são pedidos com entrada oculta pelo inicializador.
 Um segredo já configurado, mas curto, é rejeitado: ajuste o ambiente ou `.env`.
 Comentários ao final de valores e interpolação de variáveis não são suportados pelo leitor de `.env`.
 
-### Chaves RSA
+## Geração e distribuição das chaves
 
 Em instalação nova, sem a pasta `keys`:
 
@@ -179,7 +259,33 @@ O segundo acrescenta o par de Promoções. Não regenere nem apague chaves já u
 apenas para tentar resolver um erro; eventos pendentes podem depender delas.
 O Gateway usa a identidade criptográfica de Principal no fluxo web.
 
-### PostgreSQL e migrations
+## Assinatura digital
+
+Todas as mensagens de negócio RabbitMQ do fluxo atual usam RSA-PSS com SHA-256.
+A assinatura cobre ID, tipo, produtor, instante e payload do envelope.
+O consumidor verifica assinatura, produtor autorizado e compatibilidade com a routing key.
+Assinatura não cifra o conteúdo: ela verifica autenticidade e integridade.
+
+Publicações confirmadas usam mensagens persistentes, `mandatory` e publisher confirms.
+Confirmação do broker não significa processamento pelo consumidor nem entrega de e-mail.
+Para eventos distribuídos a mais de uma fila, preparar todos os bindings é necessário:
+`mandatory` sozinho só detecta ausência de qualquer rota.
+
+O sistema combina outboxes, inbox, confirmação manual e idempotência.
+A garantia é processamento tolerante a reentregas, não entrega exatamente uma vez.
+Envelopes persistidos mantêm identidade e assinatura nas novas tentativas.
+
+Falhas transitórias podem ser retentadas; resultados pendentes são recuperados por workers.
+Alguns consumidores usam filas `<fila>.revisao` após esgotar tentativas.
+Outboxes/inbox também podem ficar em `PENDENTE_REVISAO` no banco.
+Filas de revisão e registros de revisão SQL são mecanismos diferentes.
+Não reenvie mensagens ou altere status manualmente sem diagnosticar a causa.
+
+## Persistência e migrations
+
+O fluxo web usa PostgreSQL para pedidos, reservas, cobranças, entregas,
+interesses e jobs de e-mail; os arquivos JSON não são a fonte do estoque real.
+Os schemas separam a responsabilidade de cada serviço.
 
 ```powershell
 docker compose up -d postgres
@@ -203,7 +309,9 @@ Reservas/entregas antigas sem snapshot não permitem comprovar igualdade de nova
 entradas; reentregas são rejeitadas nesse caso. Envelopes de saída armazenados
 continuam recuperáveis.
 
-## Inicialização no Windows
+## Execução
+
+### Inicialização no Windows
 
 Feche os programas anteriores com Ctrl+C antes de iniciar.
 O script não instala dependências, gera chaves, aplica migrations ou encerra programas à força.
@@ -312,7 +420,7 @@ Reconexão sincroniza o estado atual por REST, mas não reproduz obrigatoriament
 todos os avisos transitórios perdidos enquanto o navegador esteve desconectado.
 A atualização automática do catálogo é separada do stream de pedidos.
 
-## Promoções e modo de teste
+## Promoções
 
 Inscreva o e-mail permitido e uma categoria na interface. Interesses passam pela
 outbox do Gateway e são consumidos pelo MS Promoções.
@@ -340,12 +448,30 @@ O próprio código também restringe o destinatário a `RESEND_TEST_RECIPIENT`.
 
 Para vários destinatários reais seria necessário verificar um domínio remetente,
 ajustar `RESEND_FROM` e adaptar a restrição de teste do código. Isso não foi habilitado.
-Regras do provedor: https://resend.com/docs/knowledge-base/403-error-resend-dev-domain
+[Regras do modo de teste do Resend](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain).
 
 `SENT` e um ID do provedor significam aceitação pela API, não prova de chegada
 à caixa de entrada. Verifique também a caixa de e-mail e spam na demonstração.
 Não zere tentativas nem recrie jobs antigos indiscriminadamente: a janela de
 idempotência do provedor é limitada e isso pode duplicar e-mails.
+
+## Verificação no RabbitMQ
+
+Acesse [o painel do RabbitMQ](http://127.0.0.1:15672) e confira:
+
+- Exchanges `eCommerce` (`direct`) e `Promocoes` (`topic`).
+- Filas e bindings descritos na arquitetura.
+- Consumidores ativos nas seis filas do fluxo web.
+- Mensagens prontas (Ready), em processamento (Unacked) e filas de revisão.
+- Logs dos serviços e os registros persistidos, além do painel.
+
+Fila vazia com consumidor ativo pode indicar processamento bem-sucedido.
+Uma confirmação de publicação não demonstra que o consumidor concluiu o trabalho.
+Não exclua filas, bindings ou mensagens para “limpar” a demonstração.
+
+O painel precisa consultar o mesmo broker usado por `RABBITMQ_URL`.
+Se o painel e o `rabbitmqctl` do Docker mostrarem filas diferentes, confira
+se você está comparando o broker nativo com um broker Docker separado.
 
 ## Validação e arquivos locais
 
@@ -384,6 +510,29 @@ Simulação do inicializador sem abrir programas nem ler segredos:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -AbrirTerminais -WhatIf
 ```
+
+## Observações
+
+- Aplicação acadêmica local, não uma configuração pronta para produção.
+- Promoções reais restritas ao destinatário de teste; múltiplos e-mails exigem
+  domínio remetente verificado e adaptação das restrições do código.
+- Cobranças do Mock ficam em memória: não reinicie durante um checkout.
+- Nota fiscal, rastreio e despacho são simulados.
+- Hub SSE em memória, pensado para uma instância; reconexão recupera o estado
+  por REST, não necessariamente todos os avisos transitórios perdidos.
+- Alguns consumidores precisam de reinício após queda definitiva da conexão.
+- A criação HTTP não possui chave de idempotência; repetir o POST pode criar outro pedido.
+- Não há garantia de entrega exatamente uma vez. Revisões precisam de diagnóstico,
+  e retentativas devem preservar a identidade do evento.
+- Segredos e chaves privadas são locais. Assinatura digital não substitui TLS
+  ou controle de acesso ao broker.
+- Os testes e READMEs auxiliares não são distribuídos nos novos clones,
+  conforme a decisão de organização da equipe.
+
+## Autores
+
+- Gabriel de Almeida Spadafora
+- Lucas de Lima Nogueira
 
 ## Licença
 
