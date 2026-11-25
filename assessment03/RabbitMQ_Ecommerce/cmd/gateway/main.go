@@ -168,7 +168,6 @@ func run() error {
 
 	orderHandler := gatewayorders.NewHTTPHandler(
 		orderRepository,
-		stockClient,
 	)
 
 	authenticatedOrderRoutes := authenticationHandler.RequireAuth(
@@ -202,7 +201,7 @@ func run() error {
 			configuration.FrontendOrigin,
 			databasePool,
 			authenticationHandler.Routes(),
-			msgateway.NewGraphQLHandler(stockClient),
+			msgateway.NewGraphQLHandler(stockClient, orderRepository, authenticationHandler),
 			authenticatedOrderRoutes,
 			authenticatedPromotionRoutes,
 		), ReadHeaderTimeout: 5 * time.Second,

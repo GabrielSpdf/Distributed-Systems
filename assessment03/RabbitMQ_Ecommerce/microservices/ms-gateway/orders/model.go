@@ -14,10 +14,6 @@ const (
 	StatusProcessingFailed = "FALHA_NO_PROCESSAMENTO"
 )
 
-type CreateOrderRequest struct {
-	Items []CreateOrderItem `json:"items"`
-}
-
 type CreateOrderItem struct {
 	ProductID string `json:"product_id"`
 	Quantity  int    `json:"quantity"`

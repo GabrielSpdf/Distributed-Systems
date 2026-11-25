@@ -194,14 +194,29 @@ export type OrdersResponse = {
   total: number
 }
 
-export function createOrder(
+export async function createOrder(
   input: CreateOrderInput,
-): Promise<Order> {
-  return request<Order>(
-    '/api/orders',
-    'POST',
-    input,
+): Promise<Pick<Order, 'id' | 'status'>> {
+  const data = await requestGraphQL<{
+    criarPedido: Pick<Order, 'id' | 'status'>
+  }>(
+    `
+      mutation CreateOrder($items: [OrderItemInput!]!) {
+        criarPedido(items: $items) {
+          id
+          status
+        }
+      }
+    `,
+    {
+      items: input.items.map((item) => ({
+        productId: item.product_id,
+        quantity: item.quantity,
+      })),
+    },
   )
+
+  return data.criarPedido
 }
 
 export function getOrders(): Promise<OrdersResponse> {

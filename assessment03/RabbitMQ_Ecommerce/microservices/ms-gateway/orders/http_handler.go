@@ -3,139 +3,34 @@ package orders
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"time"
 
 	"RabbitMQ_Ecommerce/microservices/ms-gateway/auth"
-	"RabbitMQ_Ecommerce/microservices/ms-gateway/catalog"
 )
 
 type HTTPHandler struct {
 	repository *Repository
-	stock      *catalog.StockClient
 }
 
 func NewHTTPHandler(
 	repository *Repository,
-	stock *catalog.StockClient,
 ) *HTTPHandler {
 	return &HTTPHandler{
 		repository: repository,
-		stock:      stock,
 	}
 }
 
 func (handler *HTTPHandler) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/orders", handler.create)
 	mux.HandleFunc("GET /api/orders", handler.list)
 	mux.HandleFunc("GET /api/orders/{orderId}", handler.details)
 	mux.HandleFunc("DELETE /api/orders/{orderId}", handler.cancel)
 	mux.HandleFunc("GET /api/orders/events", handler.streamEvents)
 
 	return mux
-}
-
-func (handler *HTTPHandler) create(
-	writer http.ResponseWriter,
-	request *http.Request,
-) {
-	userID, authenticated := auth.UserIDFromContext(
-		request.Context(),
-	)
-	if !authenticated {
-		writeError(
-			writer,
-			http.StatusUnauthorized,
-			"usuário não autenticado",
-		)
-		return
-	}
-
-	request.Body = http.MaxBytesReader(
-		writer,
-		request.Body,
-		64*1024,
-	)
-
-	decoder := json.NewDecoder(request.Body)
-	decoder.DisallowUnknownFields()
-
-	var input CreateOrderRequest
-
-	if err := decoder.Decode(&input); err != nil {
-		writeError(
-			writer,
-			http.StatusBadRequest,
-			"JSON inválido ou campos não permitidos",
-		)
-		return
-	}
-
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		writeError(
-			writer,
-			http.StatusBadRequest,
-			"envie somente um objeto JSON",
-		)
-		return
-	}
-
-	products, err := handler.stock.ListProducts(
-		request.Context(),
-		"",
-		"",
-	)
-	if err != nil {
-		log.Printf("[ERRO] Consulta ao estoque: %v", err)
-
-		writeError(
-			writer,
-			http.StatusServiceUnavailable,
-			"não foi possível consultar os produtos",
-		)
-		return
-	}
-
-	items, totalCents, err := PrepareItems(
-		input.Items,
-		products.Products,
-	)
-	if err != nil {
-		writeError(
-			writer,
-			http.StatusBadRequest,
-			err.Error(),
-		)
-		return
-	}
-
-	order, err := handler.repository.Create(
-		request.Context(),
-		userID,
-		items,
-		totalCents,
-	)
-	if err != nil {
-		log.Printf("[ERRO] Criação do pedido: %v", err)
-
-		writeError(
-			writer,
-			http.StatusInternalServerError,
-			"não foi possível salvar o pedido",
-		)
-		return
-	}
-
-	// 201 confirma pedido e outbox persistidos, não processamento pelo Estoque.
-	log.Printf("[INFO] Pedido %s e evento de criação salvos na outbox", order.ID)
-
-	addOrderLinks(&order)
-
-	writeJSON(writer, http.StatusCreated, order)
 }
 
 func (handler *HTTPHandler) list(

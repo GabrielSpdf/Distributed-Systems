@@ -4,21 +4,32 @@ import (
 	"context"
 	"errors"
 	"log"
+	"mime"
 	"net/http"
 	"strconv"
 
+	"RabbitMQ_Ecommerce/microservices/ms-gateway/auth"
 	"RabbitMQ_Ecommerce/microservices/ms-gateway/catalog"
+	"RabbitMQ_Ecommerce/microservices/ms-gateway/orders"
 	"RabbitMQ_Ecommerce/utils/graphqlapi"
 
 	"github.com/graph-gophers/graphql-go"
 	"github.com/graph-gophers/graphql-go/relay"
 )
 
+type graphQLRequestKey struct{}
+
 type graphQLResolver struct {
-	stock *catalog.StockClient
+	stock           *catalog.StockClient
+	orderRepository *orders.Repository
+	authentication  *auth.HTTPHandler
 }
 
-func NewGraphQLHandler(stock *catalog.StockClient) http.Handler {
+func NewGraphQLHandler(
+	stock *catalog.StockClient,
+	orderRepository *orders.Repository,
+	authentication *auth.HTTPHandler,
+) http.Handler {
 	schema := graphql.MustParseSchema(graphqlapi.CatalogSchema+`
 		type Query {
 			produtosDisponiveis(
@@ -26,13 +37,33 @@ func NewGraphQLHandler(stock *catalog.StockClient) http.Handler {
 				available: Boolean = true
 			): ProductList!
 		}
-	`, &graphQLResolver{stock: stock}, graphql.UseFieldResolvers(), graphql.MaxDepth(8))
+		type Mutation {
+			criarPedido(items: [OrderItemInput!]!): CreatedOrder
+		}
+
+		input OrderItemInput {
+			productId: String!
+			quantity: Int!
+		}
+
+		type CreatedOrder {
+			id: String!
+			status: String!
+		}
+	`, &graphQLResolver{stock: stock, orderRepository: orderRepository, authentication: authentication}, graphql.UseFieldResolvers(), graphql.MaxDepth(8))
 
 	handler := &relay.Handler{Schema: schema}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil || mediaType != "application/json" {
+			http.Error(w, "use Content-Type: application/json", http.StatusUnsupportedMediaType)
+			return
+		}
+
 		r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
-		handler.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), graphQLRequestKey{}, r)
+		handler.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
