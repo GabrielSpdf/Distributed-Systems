@@ -129,10 +129,6 @@ func run() error {
 		configuration.StockServiceURL,
 	)
 
-	catalogHandler := gatewaycatalog.NewHTTPHandler(
-		stockClient,
-	)
-
 	orderRepository := gatewayorders.NewRepository(
 		databasePool,
 	)
@@ -206,7 +202,6 @@ func run() error {
 			configuration.FrontendOrigin,
 			databasePool,
 			authenticationHandler.Routes(),
-			catalogHandler.Routes(),
 			msgateway.NewGraphQLHandler(stockClient),
 			authenticatedOrderRoutes,
 			authenticatedPromotionRoutes,

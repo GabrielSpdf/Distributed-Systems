@@ -20,6 +20,7 @@ export default defineConfig({
           })
         },
       },
+      '/graphql': 'http://localhost:8080',
       '/healthz': 'http://localhost:8080',
     },
   },

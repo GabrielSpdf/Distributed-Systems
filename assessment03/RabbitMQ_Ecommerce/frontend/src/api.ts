@@ -59,6 +59,36 @@ async function request<T>(
   return response.json() as Promise<T>
 }
 
+type GraphQLResponse<T> = {
+  data?: T | null
+  errors?: { message: string }[]
+}
+
+async function requestGraphQL<T>(
+  query: string,
+  variables: Record<string, unknown> = {},
+): Promise<T> {
+  const response = await fetch('/graphql', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  })
+
+  const result = (await response.json().catch(() => null)) as GraphQLResponse<T> | null
+  const error = result?.errors?.[0]
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  if (!response.ok || result?.data == null) {
+    throw new Error('Não foi possível concluir a operação')
+  }
+
+  return result.data
+}
+
 export function registerUser(input: RegisterInput) {
   return request<User>(
     '/api/auth/register',
@@ -101,25 +131,27 @@ export type ProductFilters = {
   available?: boolean
 }
 
-export function getProducts(
+export async function getProducts(
   filters: ProductFilters = {},
 ): Promise<ProductsResponse> {
-  const query = new URLSearchParams()
+  const data = await requestGraphQL<{
+    produtosDisponiveis: ProductsResponse
+  }>(
+    `
+      query Catalog($category: String, $available: Boolean) {
+        produtosDisponiveis(category: $category, available: $available) {
+          products { id name category price quantity }
+          total
+        }
+      }
+    `,
+    {
+      category: filters.category ?? null,
+      available: filters.available ?? null,
+    },
+  )
 
-  if (filters.category) {
-    query.set('category', filters.category)
-  }
-
-  if (filters.available !== undefined) {
-    query.set('available', String(filters.available))
-  }
-
-  const queryString = query.toString()
-  const path = queryString
-    ? `/api/products?${queryString}`
-    : '/api/products'
-
-  return request<ProductsResponse>(path, 'GET')
+  return data.produtosDisponiveis
 }
 
 export type CreateOrderInput = {

@@ -21,7 +21,6 @@ func NewHandler(
 	frontendOrigin string,
 	database DatabasePinger,
 	authenticationRoutes http.Handler,
-	catalogRoutes http.Handler,
 	graphQLRoutes http.Handler,
 	orderRoutes http.Handler,
 	promotionRoutes http.Handler,
@@ -38,10 +37,6 @@ func NewHandler(
 	mux.Handle(
 		"/api/auth/",
 		authenticationRoutes,
-	)
-	mux.Handle(
-		"/api/products",
-		catalogRoutes,
 	)
 	mux.Handle("/api/orders", orderRoutes)
 	mux.Handle("/api/orders/", orderRoutes)

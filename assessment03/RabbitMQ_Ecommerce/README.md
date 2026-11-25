@@ -385,7 +385,7 @@ Cada comando acima é um processo separado. Principal e consumidores legados
 | POST | `/api/auth/login` | Login |
 | POST | `/api/auth/logout` | Logout |
 | GET | `/api/auth/me` | Sessão atual |
-| GET | `/api/products` | Catálogo consultado no Estoque |
+| POST | `/graphql` | Query `produtosDisponiveis`, consultada no MS Estoque |
 | POST | `/api/orders` | Criar pedido |
 | GET | `/api/orders` | Listar pedidos do cliente |
 | GET | `/api/orders/{orderId}` | Detalhes |
