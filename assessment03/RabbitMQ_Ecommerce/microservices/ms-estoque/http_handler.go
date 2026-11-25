@@ -39,6 +39,7 @@ type healthResponse struct {
 
 func (handler *HTTPHandler) Routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("POST /graphql", NewGraphQLHandler(handler.store))
 	mux.HandleFunc("GET /internal/products", handler.listProducts)
 	mux.HandleFunc("GET /healthz", handler.health)
 

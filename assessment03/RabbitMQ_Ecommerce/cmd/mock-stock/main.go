@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 
+	msestoque "RabbitMQ_Ecommerce/microservices/ms-estoque"
 	"RabbitMQ_Ecommerce/microservices/ms-gateway/catalog"
 )
 
@@ -27,6 +29,7 @@ var products = []catalog.Product{
 
 func main() {
 	mux := http.NewServeMux()
+	mux.Handle("POST /graphql", msestoque.NewGraphQLHandler(mockCatalogStore{}))
 	mux.HandleFunc("GET /internal/products", listProducts)
 
 	log.Println("[MOCK] Estoque simulado em http://localhost:8081")
@@ -68,4 +71,36 @@ func listProducts(
 	); err != nil {
 		log.Printf("[ERRO] Resposta do mock: %v", err)
 	}
+}
+
+type mockCatalogStore struct{}
+
+func (mockCatalogStore) Ping(context.Context) error {
+	return nil
+}
+
+func (mockCatalogStore) ListProducts(
+	_ context.Context,
+	filter msestoque.ProductFilter,
+) ([]msestoque.Product, error) {
+	result := make([]msestoque.Product, 0, len(products))
+
+	for _, product := range products {
+		if filter.Category != "" && product.Category != filter.Category {
+			continue
+		}
+		if filter.Available != nil && *filter.Available != (product.Quantity > 0) {
+			continue
+		}
+
+		result = append(result, msestoque.Product{
+			ID:       product.ID,
+			Name:     product.Name,
+			Category: product.Category,
+			Price:    product.Price,
+			Quantity: product.Quantity,
+		})
+	}
+
+	return result, nil
 }
