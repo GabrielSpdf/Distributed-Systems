@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 
@@ -30,47 +29,9 @@ var products = []catalog.Product{
 func main() {
 	mux := http.NewServeMux()
 	mux.Handle("POST /graphql", msestoque.NewGraphQLHandler(mockCatalogStore{}))
-	mux.HandleFunc("GET /internal/products", listProducts)
 
 	log.Println("[MOCK] Estoque simulado em http://localhost:8081")
 	log.Fatal(http.ListenAndServe("127.0.0.1:8081", mux))
-}
-
-func listProducts(
-	writer http.ResponseWriter,
-	request *http.Request,
-) {
-	category := request.URL.Query().Get("category")
-	available := request.URL.Query().Get("available")
-
-	result := make([]catalog.Product, 0)
-
-	for _, product := range products {
-		if category != "" && product.Category != category {
-			continue
-		}
-
-		if available == "true" && product.Quantity <= 0 {
-			continue
-		}
-
-		if available == "false" && product.Quantity > 0 {
-			continue
-		}
-
-		result = append(result, product)
-	}
-
-	writer.Header().Set("Content-Type", "application/json")
-
-	if err := json.NewEncoder(writer).Encode(
-		catalog.ProductsResponse{
-			Products: result,
-			Total:    len(result),
-		},
-	); err != nil {
-		log.Printf("[ERRO] Resposta do mock: %v", err)
-	}
 }
 
 type mockCatalogStore struct{}

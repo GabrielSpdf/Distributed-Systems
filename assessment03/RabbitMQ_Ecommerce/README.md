@@ -347,7 +347,7 @@ Exemplo: `-ValidadeCheckout 30m`.
 |---|---|
 | Frontend | http://localhost:5173 |
 | Gateway | http://localhost:8080 |
-| Catálogo interno do Estoque | http://localhost:8081/internal/products |
+| Catálogo interno do Estoque | POST http://localhost:8081/graphql |
 | Pagamento | http://localhost:8082 |
 | Mock | http://localhost:8083 |
 | Painel RabbitMQ nativo | http://127.0.0.1:15672 |

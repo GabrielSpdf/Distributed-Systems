@@ -11,12 +11,6 @@ type Product struct {
 	Quantity int     `json:"quantity"`
 }
 
-// ProductsResponse is the body of GET /internal/products.
-type ProductsResponse struct {
-	Products []Product `json:"products"`
-	Total    int       `json:"total"`
-}
-
 // ProductFilter holds the optional catalog filters. A nil Available means
 // "do not filter by availability".
 type ProductFilter struct {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -27,11 +26,6 @@ func NewHTTPHandler(store CatalogStore) *HTTPHandler {
 	}
 }
 
-type errorResponse struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
 type healthResponse struct {
 	Service string `json:"service"`
 	Status  string `json:"status"`
@@ -40,60 +34,9 @@ type healthResponse struct {
 func (handler *HTTPHandler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("POST /graphql", NewGraphQLHandler(handler.store))
-	mux.HandleFunc("GET /internal/products", handler.listProducts)
 	mux.HandleFunc("GET /healthz", handler.health)
 
 	return mux
-}
-
-func (handler *HTTPHandler) listProducts(
-	writer http.ResponseWriter,
-	request *http.Request,
-) {
-	query := request.URL.Query()
-
-	filter := ProductFilter{
-		Category: strings.ToLower(strings.TrimSpace(query.Get("category"))),
-	}
-
-	switch query.Get("available") {
-	case "":
-	case "true":
-		available := true
-		filter.Available = &available
-	case "false":
-		available := false
-		filter.Available = &available
-	default:
-		writeJSON(writer, http.StatusBadRequest, errorResponse{
-			Code:    "INVALID_REQUEST",
-			Message: "available deve ser true ou false",
-		})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
-	defer cancel()
-
-	products, err := handler.store.ListProducts(ctx, filter)
-	if err != nil {
-		log.Printf("[ERRO] Consulta de produtos: %v", err)
-
-		writeJSON(writer, http.StatusInternalServerError, errorResponse{
-			Code:    "INTERNAL_ERROR",
-			Message: "não foi possível consultar os produtos",
-		})
-		return
-	}
-
-	if products == nil {
-		products = []Product{}
-	}
-
-	writeJSON(writer, http.StatusOK, ProductsResponse{
-		Products: products,
-		Total:    len(products),
-	})
 }
 
 func (handler *HTTPHandler) health(

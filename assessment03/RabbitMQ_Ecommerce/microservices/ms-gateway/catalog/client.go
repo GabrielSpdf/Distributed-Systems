@@ -1,11 +1,11 @@
 package catalog
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 )
@@ -42,71 +42,82 @@ func (stock *StockClient) ListProducts(
 	category string,
 	available string,
 ) (ProductsResponse, error) {
-	endpoint, err := url.Parse(
-		stock.baseURL + "/internal/products",
-	)
+	const query = `
+		query Catalog($category: String, $available: Boolean) {
+			produtosDisponiveis(category: $category, available: $available) {
+				products { id name category price quantity }
+				total
+			}
+		}
+	`
+
+	var availability any
+	switch available {
+	case "":
+		availability = nil
+	case "true":
+		availability = true
+	case "false":
+		availability = false
+	default:
+		return ProductsResponse{}, fmt.Errorf("available deve ser true ou false")
+	}
+
+	body, err := json.Marshal(struct {
+		Query     string         `json:"query"`
+		Variables map[string]any `json:"variables"`
+	}{
+		Query: query,
+		Variables: map[string]any{
+			"category":  category,
+			"available": availability,
+		},
+	})
 	if err != nil {
-		return ProductsResponse{}, fmt.Errorf(
-			"erro ao interpretar endereço do estoque: %w",
-			err,
-		)
+		return ProductsResponse{}, fmt.Errorf("erro ao preparar consulta ao estoque: %w", err)
 	}
-
-	query := endpoint.Query()
-
-	if category != "" {
-		query.Set("category", category)
-	}
-
-	if available != "" {
-		query.Set("available", available)
-	}
-
-	endpoint.RawQuery = query.Encode()
 
 	request, err := http.NewRequestWithContext(
 		ctx,
-		http.MethodGet,
-		endpoint.String(),
-		nil,
+		http.MethodPost,
+		stock.baseURL+"/graphql",
+		bytes.NewReader(body),
 	)
 	if err != nil {
-		return ProductsResponse{}, fmt.Errorf(
-			"erro ao criar requisição ao estoque: %w",
-			err,
-		)
+		return ProductsResponse{}, fmt.Errorf("erro ao criar requisição ao estoque: %w", err)
 	}
 
+	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 
 	response, err := stock.client.Do(request)
 	if err != nil {
-		return ProductsResponse{}, fmt.Errorf(
-			"erro ao consultar estoque: %w",
-			err,
-		)
+		return ProductsResponse{}, fmt.Errorf("erro ao consultar estoque: %w", err)
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return ProductsResponse{}, fmt.Errorf(
-			"estoque retornou HTTP %d",
-			response.StatusCode,
-		)
+		return ProductsResponse{}, fmt.Errorf("estoque retornou HTTP %d", response.StatusCode)
 	}
 
-	var result ProductsResponse
+	var result struct {
+		Data struct {
+			Catalog *ProductsResponse `json:"produtosDisponiveis"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
 
 	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
-		return ProductsResponse{}, fmt.Errorf(
-			"resposta inválida do estoque: %w",
-			err,
-		)
+		return ProductsResponse{}, fmt.Errorf("resposta inválida do estoque: %w", err)
+	}
+	if len(result.Errors) > 0 {
+		return ProductsResponse{}, fmt.Errorf("GraphQL do estoque: %s", result.Errors[0].Message)
+	}
+	if result.Data.Catalog == nil || result.Data.Catalog.Products == nil {
+		return ProductsResponse{}, fmt.Errorf("estoque retornou catálogo incompleto")
 	}
 
-	if result.Products == nil {
-		result.Products = []Product{}
-	}
-
-	return result, nil
+	return *result.Data.Catalog, nil
 }
