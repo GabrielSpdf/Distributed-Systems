@@ -207,6 +207,7 @@ func run() error {
 			databasePool,
 			authenticationHandler.Routes(),
 			catalogHandler.Routes(),
+			msgateway.NewGraphQLHandler(stockClient),
 			authenticatedOrderRoutes,
 			authenticatedPromotionRoutes,
 		), ReadHeaderTimeout: 5 * time.Second,

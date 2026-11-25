@@ -22,10 +22,12 @@ func NewHandler(
 	database DatabasePinger,
 	authenticationRoutes http.Handler,
 	catalogRoutes http.Handler,
+	graphQLRoutes http.Handler,
 	orderRoutes http.Handler,
 	promotionRoutes http.Handler,
 ) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("POST /graphql", graphQLRoutes)
 	mux.HandleFunc("GET /{$}", serviceInformation)
 	mux.HandleFunc(
 		"GET /healthz",
