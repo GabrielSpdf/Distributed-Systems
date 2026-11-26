@@ -36,9 +36,12 @@ func NewGraphQLHandler(
 				category: String
 				available: Boolean = true
 			): ProductList!
+			pedidos: OrderList
+			pedido(id: String!): Order
 		}
 		type Mutation {
 			criarPedido(items: [OrderItemInput!]!): CreatedOrder
+			cancelarPedido(id: String!): Boolean!
 		}
 
 		input OrderItemInput {
@@ -49,6 +52,31 @@ func NewGraphQLHandler(
 		type CreatedOrder {
 			id: String!
 			status: String!
+		}
+		type OrderList {
+			orders: [Order!]!
+			total: Int!
+		}
+		type Order {
+			id: String!
+			status: String!
+			items: [OrderItem!]!
+			total: Float!
+			currency: String!
+			canCancel: Boolean!
+			checkoutUrl: String
+			checkoutExpiresAt: String
+			invoiceId: String
+			trackingCode: String
+			shippedAt: String
+			createdAt: String!
+			updatedAt: String!
+		}
+		type OrderItem {
+			productId: String!
+			productName: String!
+			quantity: Int!
+			unitPrice: Float!
 		}
 	`, &graphQLResolver{stock: stock, orderRepository: orderRepository, authentication: authentication}, graphql.UseFieldResolvers(), graphql.MaxDepth(8))
 

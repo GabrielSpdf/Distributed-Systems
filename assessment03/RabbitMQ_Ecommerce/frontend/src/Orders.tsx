@@ -28,12 +28,12 @@ const statusLabels: Record<string, string> = {
 }
 
 function canOpenCheckout(order: Order, now: number): boolean {
-  const link = order._links.checkout
+  const checkoutURL = order.checkout_url
   const expiresAt = Date.parse(order.checkout_expires_at ?? '')
 
   if (
     order.status !== 'AGUARDANDO_PAGAMENTO' ||
-    link?.method !== 'GET' ||
+    !checkoutURL ||
     !Number.isFinite(expiresAt) ||
     expiresAt <= now
   ) {
@@ -41,7 +41,7 @@ function canOpenCheckout(order: Order, now: number): boolean {
   }
 
   try {
-    const url = new URL(link.href)
+    const url = new URL(checkoutURL)
 
     return (
       (url.protocol === 'http:' || url.protocol === 'https:') &&
@@ -134,7 +134,7 @@ function Orders({ refreshKey }: OrdersProps) {
 
             const updated = result.orders.find((order) => order.id === current.id)
 
-            return updated?._links.cancel?.method === 'DELETE' ? updated : null
+            return updated?.canCancel ? updated : null
           })
         }
       })
@@ -267,9 +267,7 @@ function Orders({ refreshKey }: OrdersProps) {
 
 
   async function showDetails(order: Order) {
-    const link = order._links.self
-
-    if (!link || loadingDetails) {
+    if (loadingDetails) {
       return
     }
 
@@ -279,7 +277,7 @@ function Orders({ refreshKey }: OrdersProps) {
     setSelectedOrder(null)
 
     try {
-      const details = await getOrderDetails(link)
+      const details = await getOrderDetails(order.id)
       setSelectedOrder(details)
     } catch (requestError) {
       setDetailsError(
@@ -293,9 +291,7 @@ function Orders({ refreshKey }: OrdersProps) {
   }
 
   async function handleCancelOrder(order: Order) {
-    const link = order._links.cancel
-
-    if (!link || link.method !== 'DELETE' || cancellationInFlight.current || loadingDetails) {
+    if (!order.canCancel || cancellationInFlight.current || loadingDetails) {
       return
     }
 
@@ -304,7 +300,7 @@ function Orders({ refreshKey }: OrdersProps) {
     setCancelFeedback(null)
 
     try {
-      await cancelOrder(link)
+      await cancelOrder(order.id)
 
       setSelectedOrder((current) =>
         current?.id === order.id ? null : current,
@@ -423,7 +419,7 @@ function Orders({ refreshKey }: OrdersProps) {
                 <strong>{currency.format(order.total)}</strong>
               </div>
               <div className="order-actions">
-                {order._links.self && selectedOrder?.id !== order.id && (
+                {selectedOrder?.id !== order.id && (
                   <button
                     className="secondary compact"
                     type="button"
@@ -433,10 +429,10 @@ function Orders({ refreshKey }: OrdersProps) {
                     Ver detalhes
                   </button>
                 )}
-                {canOpenCheckout(order, now) && (
+                {order.checkout_url && canOpenCheckout(order, now) && (
                   <a
                     className="order-checkout-link"
-                    href={order._links.checkout.href}
+                    href={order.checkout_url}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(event) => {
@@ -450,7 +446,7 @@ function Orders({ refreshKey }: OrdersProps) {
                     <span className="checkout-new-tab"></span>
                   </a>
                 )}
-                {order._links.cancel?.method === 'DELETE' && (
+                {order.canCancel && (
                   <button
                     className="secondary compact"
                     type="button"

@@ -62,7 +62,6 @@ func (repository *Repository) Create(
 		Items:     items,
 		Total:     float64(totalCents) / 100,
 		Currency:  "BRL",
-		Links:     make(map[string]Link),
 	}
 
 	const insertOrder = `
@@ -194,7 +193,6 @@ func (repository *Repository) ListByUser(
 			UserID:   userID,
 			Currency: "BRL",
 			Items:    make([]OrderItem, 0),
-			Links:    make(map[string]Link),
 		}
 
 		err := rows.Scan(
@@ -320,7 +318,6 @@ func (repository *Repository) FindByID(
 	order := Order{
 		UserID:   userID,
 		Currency: "BRL",
-		Links:    make(map[string]Link),
 	}
 
 	err := repository.pool.QueryRow(

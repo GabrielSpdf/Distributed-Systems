@@ -38,8 +38,7 @@ func NewHandler(
 		"/api/auth/",
 		authenticationRoutes,
 	)
-	mux.Handle("/api/orders", orderRoutes)
-	mux.Handle("/api/orders/", orderRoutes)
+	mux.Handle("GET /api/orders/events", orderRoutes)
 	mux.Handle("/api/promotion-interests", promotionRoutes)
 	mux.Handle("/api/promotion-interests/", promotionRoutes)
 

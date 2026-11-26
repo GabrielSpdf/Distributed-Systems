@@ -168,25 +168,20 @@ export type OrderItem = {
   unit_price: number
 }
 
-export type OrderLink = {
-  href: string
-  method: string
-}
-
 export type Order = {
   id: string
   status: string
   items: OrderItem[]
   total: number
   currency: string
-  checkout_url?: string
-  checkout_expires_at?: string
-  invoice_id?: string
-  tracking_code?: string
-  shipped_at?: string
+  checkout_url: string | null
+  checkout_expires_at: string | null
+  invoice_id: string | null
+  tracking_code: string | null
+  shipped_at: string | null
   created_at: string
   updated_at: string
-  _links: Record<string, OrderLink>
+  canCancel: boolean
 }
 
 export type OrdersResponse = {
@@ -219,21 +214,53 @@ export async function createOrder(
   return data.criarPedido
 }
 
-export function getOrders(): Promise<OrdersResponse> {
-  return request<OrdersResponse>(
-    '/api/orders',
-    'GET',
+const orderFields = `
+  id status total currency canCancel
+  checkout_url: checkoutUrl
+  checkout_expires_at: checkoutExpiresAt
+  invoice_id: invoiceId
+  tracking_code: trackingCode
+  shipped_at: shippedAt
+  created_at: createdAt
+  updated_at: updatedAt
+  items {
+    product_id: productId
+    product_name: productName
+    quantity
+    unit_price: unitPrice
+  }
+`
+
+export async function getOrders(): Promise<OrdersResponse> {
+  const data = await requestGraphQL<{ pedidos: OrdersResponse }>(`
+    query ListOrders {
+      pedidos { orders { ${orderFields} } total }
+    }
+  `)
+  return data.pedidos
+}
+
+export async function getOrderDetails(id: string): Promise<Order> {
+  const data = await requestGraphQL<{ pedido: Order }>(
+    `
+      query OrderDetails($id: String!) {
+        pedido(id: $id) { ${orderFields} }
+      }
+    `,
+    { id },
   )
+  return data.pedido
 }
 
-export function getOrderDetails(
-  link: OrderLink,
-): Promise<Order> {
-  return request<Order>(link.href, link.method)
-}
-
-export function cancelOrder(link: OrderLink): Promise<void> {
-  return request<void>(link.href, 'DELETE')
+export async function cancelOrder(id: string): Promise<void> {
+  await requestGraphQL<{ cancelarPedido: boolean }>(
+    `
+      mutation CancelOrder($id: String!) {
+        cancelarPedido(id: $id)
+      }
+    `,
+    { id },
+  )
 }
 
 export type PromotionCategory =
