@@ -187,11 +187,6 @@ func run() error {
 		)
 	}()
 
-	promotionHandler := gatewaypromotions.NewHTTPHandler(promotionRepository)
-
-	authenticatedPromotionRoutes := authenticationHandler.RequireAuth(
-		promotionHandler.Routes(),
-	)
 
 	log.Println("[SUCESSO] Conexão com o PostgreSQL estabelecida")
 
@@ -201,10 +196,10 @@ func run() error {
 			configuration.FrontendOrigin,
 			databasePool,
 			authenticationHandler.Routes(),
-			msgateway.NewGraphQLHandler(stockClient, orderRepository, authenticationHandler),
+			msgateway.NewGraphQLHandler(stockClient, orderRepository, authenticationHandler, promotionRepository),
 			authenticatedOrderRoutes,
-			authenticatedPromotionRoutes,
-		), ReadHeaderTimeout: 5 * time.Second,
+		),
+		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,

@@ -273,29 +273,47 @@ export type PromotionInterestsResponse = {
   email: string
 }
 
-export function getPromotionInterests(): Promise<PromotionInterestsResponse> {
-  return request<PromotionInterestsResponse>(
-    '/api/promotion-interests',
-    'GET',
-  )
+export async function getPromotionInterests(): Promise<PromotionInterestsResponse> {
+  const data = await requestGraphQL<{
+    interessesPromocao: PromotionInterestsResponse
+  }>(`
+    query PromotionInterests {
+      interessesPromocao { categories email }
+    }
+  `)
+
+  return data.interessesPromocao
 }
 
-export function subscribePromotionInterests(
+export async function subscribePromotionInterests(
   categories: PromotionCategory[],
   email?: string,
 ): Promise<{ changed: boolean }> {
-  return request<{ changed: boolean }>(
-    '/api/promotion-interests',
-    'POST',
-    email ? { categories, email } : { categories },
+  const data = await requestGraphQL<{
+    registrarInteressePromocao: { changed: boolean }
+  }>(
+    `
+      mutation SubscribePromotion($categories: [String!]!, $email: String) {
+        registrarInteressePromocao(categories: $categories, email: $email) {
+          changed
+        }
+      }
+    `,
+    { categories, email },
   )
+
+  return data.registrarInteressePromocao
 }
 
-export function unsubscribePromotionInterest(
+export async function unsubscribePromotionInterest(
   category: PromotionCategory,
 ): Promise<void> {
-  return request<void>(
-    `/api/promotion-interests/${encodeURIComponent(category)}`,
-    'DELETE',
+  await requestGraphQL<{ cancelarInteressePromocao: { changed: boolean } }>(
+    `
+      mutation UnsubscribePromotion($category: String!) {
+        cancelarInteressePromocao(category: $category) { changed }
+      }
+    `,
+    { category },
   )
 }

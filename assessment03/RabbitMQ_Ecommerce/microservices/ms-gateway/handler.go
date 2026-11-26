@@ -23,7 +23,6 @@ func NewHandler(
 	authenticationRoutes http.Handler,
 	graphQLRoutes http.Handler,
 	orderRoutes http.Handler,
-	promotionRoutes http.Handler,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("POST /graphql", graphQLRoutes)
@@ -39,8 +38,6 @@ func NewHandler(
 		authenticationRoutes,
 	)
 	mux.Handle("GET /api/orders/events", orderRoutes)
-	mux.Handle("/api/promotion-interests", promotionRoutes)
-	mux.Handle("/api/promotion-interests/", promotionRoutes)
 
 	return cors(frontendOrigin, mux)
 }

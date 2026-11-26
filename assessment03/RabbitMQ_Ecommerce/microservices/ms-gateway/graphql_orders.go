@@ -25,7 +25,7 @@ func (resolver *graphQLResolver) CriarPedido(
 	ctx context.Context,
 	args *struct{ Items []createOrderItemInput },
 ) (*createdOrder, error) {
-	userID, err := resolver.orderUserID(ctx)
+	userID, err := resolver.authenticatedUserID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (resolver *graphQLResolver) CriarPedido(
 	return &createdOrder{ID: order.ID, Status: order.Status}, nil
 }
 
-func (resolver *graphQLResolver) orderUserID(ctx context.Context) (string, error) {
+func (resolver *graphQLResolver) authenticatedUserID(ctx context.Context) (string, error) {
 	request, ok := ctx.Value(graphQLRequestKey{}).(*http.Request)
 	if !ok {
 		return "", errors.New("requisição indisponível")
@@ -101,7 +101,7 @@ type orderItemResult struct {
 }
 
 func (resolver *graphQLResolver) Pedidos(ctx context.Context) (*orderListResult, error) {
-	userID, err := resolver.orderUserID(ctx)
+	userID, err := resolver.authenticatedUserID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (resolver *graphQLResolver) Pedido(
 	ctx context.Context,
 	args *struct{ ID string },
 ) (*orderResult, error) {
-	userID, err := resolver.orderUserID(ctx)
+	userID, err := resolver.authenticatedUserID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (resolver *graphQLResolver) CancelarPedido(
 	ctx context.Context,
 	args *struct{ ID string },
 ) (bool, error) {
-	userID, err := resolver.orderUserID(ctx)
+	userID, err := resolver.authenticatedUserID(ctx)
 	if err != nil {
 		return false, err
 	}

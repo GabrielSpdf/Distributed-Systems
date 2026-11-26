@@ -388,9 +388,6 @@ Cada comando acima é um processo separado. Principal e consumidores legados
 | POST | `/graphql` | Query `produtosDisponiveis`, consultada no MS Estoque |
 | POST | `/graphql` | Mutation `criarPedido` |
 | GET | `/api/orders/events` | Stream SSE autenticado |
-| GET | `/api/promotion-interests` | Preferências |
-| POST | `/api/promotion-interests` | Inscrição com categoria/e-mail |
-| DELETE | `/api/promotion-interests/{category}` | Cancelar interesse |
 
 IDs internos de pedidos são UUIDs; identificadores de exibição `PED-...`
 são usados nos contratos com os serviços.

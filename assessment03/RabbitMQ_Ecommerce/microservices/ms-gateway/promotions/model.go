@@ -9,13 +9,6 @@ import (
 	"RabbitMQ_Ecommerce/utils/events"
 )
 
-// SubscribeRequest contém as categorias escolhidas e, opcionalmente, o e-mail
-// informado pelo cliente. Sem e-mail, vale o atual (ou o da conta).
-type SubscribeRequest struct {
-	Categories []string `json:"categories"`
-	Email      string   `json:"email"`
-}
-
 const (
 	ActionSubscribe   = events.PromotionSubscribe
 	ActionUnsubscribe = events.PromotionUnsubscribe
@@ -30,7 +23,7 @@ var allowedCategories = map[string]struct{}{
 	"eletronicos": {},
 }
 
-func validateCategories(categories []string) error {
+func ValidateCategories(categories []string) error {
 	if len(categories) == 0 {
 		return fmt.Errorf("selecione pelo menos uma categoria")
 	}

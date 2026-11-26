@@ -43,7 +43,7 @@ func (repository *Repository) SubscribeWithEmail(
 	categories []string,
 	requestedEmail string,
 ) (bool, error) {
-	if err := validateCategories(categories); err != nil {
+	if err := ValidateCategories(categories); err != nil {
 		return false, err
 	}
 
@@ -219,7 +219,7 @@ func (repository *Repository) Unsubscribe(
 	userID string,
 	category string,
 ) (bool, error) {
-	if err := validateCategories([]string{category}); err != nil {
+	if err := ValidateCategories([]string{category}); err != nil {
 		return false, err
 	}
 

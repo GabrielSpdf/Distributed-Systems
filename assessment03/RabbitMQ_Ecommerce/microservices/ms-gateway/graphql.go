@@ -11,6 +11,7 @@ import (
 	"RabbitMQ_Ecommerce/microservices/ms-gateway/auth"
 	"RabbitMQ_Ecommerce/microservices/ms-gateway/catalog"
 	"RabbitMQ_Ecommerce/microservices/ms-gateway/orders"
+	"RabbitMQ_Ecommerce/microservices/ms-gateway/promotions"
 	"RabbitMQ_Ecommerce/utils/graphqlapi"
 
 	"github.com/graph-gophers/graphql-go"
@@ -20,15 +21,17 @@ import (
 type graphQLRequestKey struct{}
 
 type graphQLResolver struct {
-	stock           *catalog.StockClient
-	orderRepository *orders.Repository
-	authentication  *auth.HTTPHandler
+	stock               *catalog.StockClient
+	orderRepository     *orders.Repository
+	authentication      *auth.HTTPHandler
+	promotionRepository *promotions.Repository
 }
 
 func NewGraphQLHandler(
 	stock *catalog.StockClient,
 	orderRepository *orders.Repository,
 	authentication *auth.HTTPHandler,
+	promotionRepository *promotions.Repository,
 ) http.Handler {
 	schema := graphql.MustParseSchema(graphqlapi.CatalogSchema+`
 		type Query {
@@ -38,10 +41,13 @@ func NewGraphQLHandler(
 			): ProductList!
 			pedidos: OrderList
 			pedido(id: String!): Order
+			interessesPromocao: PromotionInterests!
 		}
 		type Mutation {
 			criarPedido(items: [OrderItemInput!]!): CreatedOrder
 			cancelarPedido(id: String!): Boolean!
+			registrarInteressePromocao(categories: [String!]!, email: String): PromotionInterestChange!
+			cancelarInteressePromocao(category: String!): PromotionInterestChange!
 		}
 
 		input OrderItemInput {
@@ -78,7 +84,15 @@ func NewGraphQLHandler(
 			quantity: Int!
 			unitPrice: Float!
 		}
-	`, &graphQLResolver{stock: stock, orderRepository: orderRepository, authentication: authentication}, graphql.UseFieldResolvers(), graphql.MaxDepth(8))
+		type PromotionInterests {
+			categories: [String!]!
+			email: String!
+		}
+
+		type PromotionInterestChange {
+			changed: Boolean!
+		}
+	`, &graphQLResolver{stock: stock, orderRepository: orderRepository, authentication: authentication, promotionRepository: promotionRepository}, graphql.UseFieldResolvers(), graphql.MaxDepth(8))
 
 	handler := &relay.Handler{Schema: schema}
 
