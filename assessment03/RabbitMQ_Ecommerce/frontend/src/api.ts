@@ -16,49 +16,6 @@ export type LoginInput = {
   password: string
 }
 
-type ErrorResponse = {
-  error?: string
-}
-
-async function request<T>(
-  path: string,
-  method: string,
-  body?: unknown,
-): Promise<T> {
-  const response = await fetch(path, {
-    method,
-    credentials: 'include',
-    headers: body
-      ? {
-          'Content-Type': 'application/json',
-        }
-      : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  })
-
-  if (!response.ok) {
-    let message = 'Não foi possível concluir a operação'
-
-    try {
-      const errorBody = (await response.json()) as ErrorResponse
-
-      if (errorBody.error) {
-        message = errorBody.error
-      }
-    } catch {
-      // A resposta não continha um JSON de erro.
-    }
-
-    throw new Error(message)
-  }
-
-  if (response.status === 204) {
-    return undefined as T
-  }
-
-  return response.json() as Promise<T>
-}
-
 type GraphQLResponse<T> = {
   data?: T | null
   errors?: { message: string }[]
@@ -89,28 +46,43 @@ async function requestGraphQL<T>(
   return result.data
 }
 
-export function registerUser(input: RegisterInput) {
-  return request<User>(
-    '/api/auth/register',
-    'POST',
+const userFields = 'id name email created_at: createdAt'
+
+export async function registerUser(input: RegisterInput): Promise<User> {
+  const data = await requestGraphQL<{ cadastrarUsuario: User }>(
+    `
+      mutation Register($name: String!, $email: String!, $password: String!) {
+        cadastrarUsuario(name: $name, email: $email, password: $password) {
+          ${userFields}
+        }
+      }
+    `,
     input,
   )
+  return data.cadastrarUsuario
 }
 
-export function login(input: LoginInput) {
-  return request<User>(
-    '/api/auth/login',
-    'POST',
+export async function login(input: LoginInput): Promise<User> {
+  const data = await requestGraphQL<{ entrar: User }>(
+    `
+      mutation Login($email: String!, $password: String!) {
+        entrar(email: $email, password: $password) { ${userFields} }
+      }
+    `,
     input,
   )
+  return data.entrar
 }
 
-export function getCurrentUser() {
-  return request<User>('/api/auth/me', 'GET')
+export async function getCurrentUser(): Promise<User> {
+  const data = await requestGraphQL<{ usuarioAtual: User }>(`
+    query CurrentUser { usuarioAtual { ${userFields} } }
+  `)
+  return data.usuarioAtual
 }
 
-export function logout() {
-  return request<void>('/api/auth/logout', 'POST')
+export async function logout(): Promise<void> {
+  await requestGraphQL<{ sair: boolean }>('mutation Logout { sair }')
 }
 
 export type Product = {

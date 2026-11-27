@@ -20,6 +20,8 @@ import (
 
 type graphQLRequestKey struct{}
 
+type graphQLWriterKey struct{}
+
 type graphQLResolver struct {
 	stock               *catalog.StockClient
 	orderRepository     *orders.Repository
@@ -42,12 +44,16 @@ func NewGraphQLHandler(
 			pedidos: OrderList
 			pedido(id: String!): Order
 			interessesPromocao: PromotionInterests!
+			usuarioAtual: User
 		}
 		type Mutation {
 			criarPedido(items: [OrderItemInput!]!): CreatedOrder
 			cancelarPedido(id: String!): Boolean!
 			registrarInteressePromocao(categories: [String!]!, email: String): PromotionInterestChange!
 			cancelarInteressePromocao(category: String!): PromotionInterestChange!
+			cadastrarUsuario(name: String!, email: String!, password: String!): User
+			entrar(email: String!, password: String!): User
+			sair: Boolean!
 		}
 
 		input OrderItemInput {
@@ -92,6 +98,12 @@ func NewGraphQLHandler(
 		type PromotionInterestChange {
 			changed: Boolean!
 		}
+		type User {
+			id: String!
+			name: String!
+			email: String!
+			createdAt: String!
+		}
 	`, &graphQLResolver{stock: stock, orderRepository: orderRepository, authentication: authentication, promotionRepository: promotionRepository}, graphql.UseFieldResolvers(), graphql.MaxDepth(8))
 
 	handler := &relay.Handler{Schema: schema}
@@ -105,6 +117,7 @@ func NewGraphQLHandler(
 
 		r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
 		ctx := context.WithValue(r.Context(), graphQLRequestKey{}, r)
+		ctx = context.WithValue(ctx, graphQLWriterKey{}, w)
 		handler.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

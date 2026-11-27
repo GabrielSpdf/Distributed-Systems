@@ -20,7 +20,6 @@ type response struct {
 func NewHandler(
 	frontendOrigin string,
 	database DatabasePinger,
-	authenticationRoutes http.Handler,
 	graphQLRoutes http.Handler,
 	orderRoutes http.Handler,
 ) http.Handler {
@@ -32,10 +31,6 @@ func NewHandler(
 		func(writer http.ResponseWriter, request *http.Request) {
 			health(writer, request, database)
 		},
-	)
-	mux.Handle(
-		"/api/auth/",
-		authenticationRoutes,
 	)
 	mux.Handle("GET /api/orders/events", orderRoutes)
 

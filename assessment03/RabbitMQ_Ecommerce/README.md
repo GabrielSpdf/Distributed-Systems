@@ -381,9 +381,6 @@ Cada comando acima é um processo separado. Principal e consumidores legados
 
 | Método | Rota | Uso |
 |---|---|---|
-| POST | `/api/auth/register` | Cadastro |
-| POST | `/api/auth/login` | Login |
-| POST | `/api/auth/logout` | Logout |
 | GET | `/api/auth/me` | Sessão atual |
 | POST | `/graphql` | Query `produtosDisponiveis`, consultada no MS Estoque |
 | POST | `/graphql` | Mutation `criarPedido` |

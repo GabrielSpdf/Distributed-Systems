@@ -16,28 +16,30 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 	return userID, ok && userID != ""
 }
 
-func (handler *HTTPHandler) AuthenticateRequest(
-	request *http.Request,
-) (userID string, status int, message string) {
+func (handler *HTTPHandler) CurrentUser(request *http.Request) (User, int, string) {
 	cookie, err := request.Cookie(sessionCookieName)
 	if err != nil {
-		return "", http.StatusUnauthorized, "usuário não autenticado"
+		return User{}, http.StatusUnauthorized, "usuário não autenticado"
 	}
 
-	userID, err = handler.tokens.Validate(cookie.Value)
+	userID, err := handler.tokens.Validate(cookie.Value)
 	if err != nil {
-		return "", http.StatusUnauthorized, "sessão inválida ou expirada"
+		return User{}, http.StatusUnauthorized, "sessão inválida ou expirada"
 	}
 
-	_, err = handler.users.FindByID(request.Context(), userID)
+	user, err := handler.users.FindByID(request.Context(), userID)
 	if errors.Is(err, ErrUserNotFound) {
-		return "", http.StatusUnauthorized, "usuário não autenticado"
+		return User{}, http.StatusUnauthorized, "usuário não autenticado"
 	}
 	if err != nil {
-		return "", http.StatusInternalServerError, "erro ao verificar usuário"
+		return User{}, http.StatusInternalServerError, "erro ao verificar usuário"
 	}
+	return user, http.StatusOK, ""
+}
 
-	return userID, http.StatusOK, ""
+func (handler *HTTPHandler) AuthenticateRequest(request *http.Request) (string, int, string) {
+	user, status, message := handler.CurrentUser(request)
+	return user.ID, status, message
 }
 
 func (handler *HTTPHandler) RequireAuth(next http.Handler) http.Handler {
