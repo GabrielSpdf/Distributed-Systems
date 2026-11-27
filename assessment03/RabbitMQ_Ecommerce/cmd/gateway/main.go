@@ -194,7 +194,7 @@ func run() error {
 		Handler: msgateway.NewHandler(
 			configuration.FrontendOrigin,
 			databasePool,
-			msgateway.NewGraphQLHandler(stockClient, orderRepository, authenticationHandler, promotionRepository),
+			msgateway.NewGraphQLHandler(stockClient, orderRepository, authenticationHandler, promotionRepository, configuration.FrontendOrigin),
 			authenticatedOrderRoutes,
 		),
 		ReadHeaderTimeout: 5 * time.Second,

@@ -20,7 +20,10 @@ export default defineConfig({
           })
         },
       },
-      '/graphql': 'http://localhost:8080',
+      '/graphql': {
+        target: 'http://localhost:8080',
+        ws: true,
+      },
       '/healthz': 'http://localhost:8080',
     },
   },

@@ -1,6 +1,7 @@
 package orders
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"time"
@@ -175,4 +176,51 @@ func (repository *Repository) notifyCheckoutAvailable(
 		ID:   eventID,
 		Data: data,
 	})
+}
+
+type OrderStatusUpdate struct {
+	EventID string
+	OrderID string `json:"orderId"`
+	Status  string `json:"status"`
+}
+
+func (repository *Repository) SubscribeOrderStatus(
+	ctx context.Context,
+	userID string,
+) <-chan OrderStatusUpdate {
+	source, unsubscribe := repository.sseHub.subscribe(userID)
+	updates := make(chan OrderStatusUpdate)
+
+	go func() {
+		defer close(updates)
+		defer unsubscribe()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-source:
+				if !ok {
+					return
+				}
+				if event.Name != "order.status.changed" {
+					continue
+				}
+
+				var update OrderStatusUpdate
+				if err := json.Unmarshal(event.Data, &update); err != nil {
+					continue
+				}
+				update.EventID = event.ID
+
+				select {
+				case updates <- update:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+
+	return updates
 }

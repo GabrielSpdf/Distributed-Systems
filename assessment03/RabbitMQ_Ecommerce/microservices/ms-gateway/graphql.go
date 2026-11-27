@@ -16,6 +16,7 @@ import (
 
 	"github.com/graph-gophers/graphql-go"
 	"github.com/graph-gophers/graphql-go/relay"
+	graphqlws "github.com/graph-gophers/graphql-transport-ws"
 )
 
 type graphQLRequestKey struct{}
@@ -34,6 +35,7 @@ func NewGraphQLHandler(
 	orderRepository *orders.Repository,
 	authentication *auth.HTTPHandler,
 	promotionRepository *promotions.Repository,
+	frontendOrigin string,
 ) http.Handler {
 	schema := graphql.MustParseSchema(graphqlapi.CatalogSchema+`
 		type Query {
@@ -104,11 +106,24 @@ func NewGraphQLHandler(
 			email: String!
 			createdAt: String!
 		}
+		type Subscription {
+			pedidoAtualizado: OrderStatusUpdate!
+		}
+		type OrderStatusUpdate {
+			eventId: String!
+			orderId: String!
+			status: String!
+		}
 	`, &graphQLResolver{stock: stock, orderRepository: orderRepository, authentication: authentication, promotionRepository: promotionRepository}, graphql.UseFieldResolvers(), graphql.MaxDepth(8))
 
 	handler := &relay.Handler{Schema: schema}
+	httpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "use POST para operações GraphQL via HTTP", http.StatusMethodNotAllowed)
+			return
+		}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil || mediaType != "application/json" {
 			http.Error(w, "use Content-Type: application/json", http.StatusUnsupportedMediaType)
@@ -120,6 +135,22 @@ func NewGraphQLHandler(
 		ctx = context.WithValue(ctx, graphQLWriterKey{}, w)
 		handler.ServeHTTP(w, r.WithContext(ctx))
 	})
+
+	return graphqlws.NewHandlerFunc(
+		schema,
+		httpHandler,
+		graphqlws.WithCheckOrigin(func(r *http.Request) bool {
+			return frontendOrigin != "" && r.Header.Get("Origin") == frontendOrigin
+		}),
+		graphqlws.WithContextGenerator(graphqlws.ContextGeneratorFunc(
+			func(ctx context.Context, r *http.Request) (context.Context, error) {
+				return context.WithValue(ctx, graphQLRequestKey{}, r), nil
+			},
+		)),
+		graphqlws.WithMaxSubscriptions(4),
+		graphqlws.WithReadLimit(64*1024),
+		graphqlws.WithReadIdleTimeout(0),
+	)
 }
 
 func (resolver *graphQLResolver) ProdutosDisponiveis(

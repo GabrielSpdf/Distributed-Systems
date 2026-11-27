@@ -25,6 +25,7 @@ func NewHandler(
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("POST /graphql", graphQLRoutes)
+	mux.Handle("GET /graphql", graphQLRoutes)
 	mux.HandleFunc("GET /{$}", serviceInformation)
 	mux.HandleFunc(
 		"GET /healthz",
