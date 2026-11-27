@@ -1,0 +1,25 @@
+**/private.pem
+**/public.pem
+**/keys
+*.exe
+.env
+.cache/
+frontend/node_modules/
+frontend/dist/
+.vite/
+frontend/.vite/
+
+# Cache de compilação do TypeScript
+*.tsbuildinfo
+
+# Arquivos gerados pelos testes Go
+*.test
+coverage.out
+coverage.html
+
+# Documentacao auxiliar local; manter somente o README central versionado.
+[Rr][Ee][Aa][Dd][Mm][Ee]*
+!/README.md
+
+# Arquivos de teste mantidos apenas nesta maquina.
+*_test*
