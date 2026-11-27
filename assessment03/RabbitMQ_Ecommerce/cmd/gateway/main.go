@@ -166,14 +166,6 @@ func run() error {
 		statusWorkers.Wait()
 	}()
 
-	orderHandler := gatewayorders.NewHTTPHandler(
-		orderRepository,
-	)
-
-	authenticatedOrderRoutes := authenticationHandler.RequireAuth(
-		orderHandler.Routes(),
-	)
-
 	promotionRepository := gatewaypromotions.NewRepository(databasePool)
 
 	statusWorkers.Add(1)
@@ -195,7 +187,6 @@ func run() error {
 			configuration.FrontendOrigin,
 			databasePool,
 			msgateway.NewGraphQLHandler(stockClient, orderRepository, authenticationHandler, promotionRepository, configuration.FrontendOrigin),
-			authenticatedOrderRoutes,
 		),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

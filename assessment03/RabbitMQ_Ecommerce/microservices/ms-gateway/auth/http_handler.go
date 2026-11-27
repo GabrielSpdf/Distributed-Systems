@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/mail"
@@ -125,10 +124,4 @@ func validEmail(email string) bool {
 	}
 	address, err := mail.ParseAddress(email)
 	return err == nil && address.Address == email
-}
-
-func writeError(writer http.ResponseWriter, status int, message string) {
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(map[string]string{"error": message})
 }

@@ -6,20 +6,6 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
-        configure(proxy) {
-          proxy.on('proxyRes', (proxyResponse, request, response) => {
-            if (request.url?.split('?')[0] !== '/api/orders/events') return
-
-            proxyResponse.on('close', () => {
-              if (!proxyResponse.complete) {
-                response.destroy()
-              }
-            })
-          })
-        },
-      },
       '/graphql': {
         target: 'http://localhost:8080',
         ws: true,

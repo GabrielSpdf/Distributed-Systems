@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getOrders, type Order, getOrderDetails, cancelOrder } from './api'
+import { createClient } from 'graphql-ws'
 
 type OrdersProps = {
   refreshKey: number
@@ -73,7 +74,7 @@ function Orders({ refreshKey }: OrdersProps) {
     isError: boolean
   } | null>(null)
   const [streamState, setStreamState] = useState<
-    'connecting' | 'connected' | 'reconnecting'
+    'connecting' | 'connected' | 'reconnecting' | 'disconnected'
   >('connecting')
   const [statusNotifications, setStatusNotifications] = useState<
     { id: string; message: string; expiresAt: number }[]
@@ -159,111 +160,114 @@ function Orders({ refreshKey }: OrdersProps) {
   }, [refreshKey, reload])
 
   useEffect(() => {
-    let source = new EventSource('/api/orders/events', {
-      withCredentials: true,
-    })
+  let active = true
+  let refreshTimer: number | undefined
+  let pongTimer: number | undefined
 
-    let lastSignalAt = Date.now()
+  const scheduleRefresh = () => {
+    if (!active || refreshTimer !== undefined) return
 
-    const onHeartbeat = () => {
-      lastSignalAt = Date.now()
+    refreshTimer = window.setTimeout(() => {
+      refreshTimer = undefined
+      setReload((value) => value + 1)
+    }, 100)
+  }
+
+  const clearPongTimer = () => {
+    if (pongTimer !== undefined) {
+      window.clearTimeout(pongTimer)
+      pongTimer = undefined
     }
+  }
 
-    let refreshTimer: number | undefined
+  const url = new URL('/graphql', window.location.href)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
 
-    const scheduleRefresh = () => {
-      if (refreshTimer !== undefined) return
+  const client = createClient({
+    url: url.href,
+    retryAttempts: 8,
+    connectionAckWaitTimeout: 5_000,
+    keepAlive: 15_000,
+    on: {
+      connected: () => {
+        if (!active) return
+        setStreamState('connected')
+        scheduleRefresh()
+      },
+      closed: () => {
+        clearPongTimer()
+        if (active) setStreamState('reconnecting')
+      },
+      ping: (received) => {
+        if (received || !active) return
+        clearPongTimer()
+        pongTimer = window.setTimeout(() => client.terminate(), 5_000)
+      },
+      pong: (received) => {
+        if (received) clearPongTimer()
+      },
+    },
+  })
 
-      refreshTimer = window.setTimeout(() => {
-        refreshTimer = undefined
-        setReload((value) => value + 1)
-      }, 100)
+  const unsubscribe = client.subscribe<{
+    pedidoAtualizado: {
+      eventId: string
+      orderId: string
+      status: string
     }
+  }>(
+    {
+      query: `
+        subscription OrderUpdates {
+          pedidoAtualizado { eventId orderId status }
+        }
+      `,
+    },
+    {
+      next: (result) => {
+        if (!active) return
+        if (result.errors?.length) {
+          setStreamState('disconnected')
+          return
+        }
 
-    const onReady = () => {
-      lastSignalAt = Date.now()
-      setStreamState('connected')
-      scheduleRefresh()
-    }
+        const update = result.data?.pedidoAtualizado
+        if (!update) return
 
-    const onStatusChanged = (event: MessageEvent<string>) => {
-      try {
-        const data: unknown = JSON.parse(event.data)
+        scheduleRefresh()
 
-        if (!data || typeof data !== 'object') return
-        if (!('orderId' in data) || typeof data.orderId !== 'string') return
-        if (!('status' in data) || typeof data.status !== 'string') return
-        if (!Object.hasOwn(statusLabels, data.status)) return
+        const label = statusLabels[update.status]
+        if (!Object.hasOwn(statusLabels, update.status)) return
 
         const notification = {
-          id: event.lastEventId || `local-${++notificationSequence.current}`,
-          message: `Pedido ${data.orderId}: ${statusLabels[data.status]}.`,
+          id: update.eventId || `local-${++notificationSequence.current}`,
+          message: `Pedido ${update.orderId}: ${label}.`,
           expiresAt: Date.now() + 8000,
         }
-        // Atualização funcional preserva eventos recebidos no mesmo ciclo.
-        // Cada aviso tem seu próprio prazo: novos eventos não renovam os anteriores.
+
         setStatusNotifications((current) =>
           current.some((item) => item.id === notification.id)
             ? current
             : [...current, notification],
         )
-        scheduleRefresh()
-      } catch {
-        // Ignora notificações que não seguem o formato esperado.
-      }
-    }
+      },
+      error: () => {
+        if (active) setStreamState('disconnected')
+      },
+      complete: () => {
+        if (active) setStreamState('disconnected')
+      },
+    },
+  )
 
-    const onCheckoutAvailable = (event: MessageEvent<string>) => {
-      try {
-        const data: unknown = JSON.parse(event.data)
-
-        if (!data || typeof data !== 'object') return
-        if (!('orderId' in data) || typeof data.orderId !== 'string') return
-
-        // O link será obtido da API, não aberto diretamente pelo aviso.
-        scheduleRefresh()
-      } catch {
-        // Ignora notificações inválidas.
-      }
-    }
-
-    const onError = () => {
-      setStreamState('reconnecting')
-    }
-
-    const attachListeners = () => {
-      source.addEventListener('connection.ready', onReady)
-      source.addEventListener('connection.heartbeat', onHeartbeat)
-      source.addEventListener('order.status.changed', onStatusChanged)
-      source.addEventListener('payment.checkout.available', onCheckoutAvailable)
-      source.addEventListener('error', onError)
-    }
-
-    attachListeners()
-
-    const connectionTimer = window.setInterval(() => {
-      if (Date.now() - lastSignalAt < 45000) return
-
-      setStreamState('reconnecting')
-      source.close()
-
-      lastSignalAt = Date.now()
-      source = new EventSource('/api/orders/events', {
-        withCredentials: true,
-      })
-      attachListeners()
-    }, 5000)
-
-    return () => {
-      source.close()
-
-      window.clearInterval(connectionTimer)
-
-      if (refreshTimer !== undefined) {
-        window.clearTimeout(refreshTimer)
-      }
-    }
-  }, [])
+  return () => {
+    active = false
+    unsubscribe()
+    void client.dispose()
+    window.clearTimeout(refreshTimer)
+    clearPongTimer()
+  }
+}, [])
 
 
   async function showDetails(order: Order) {
@@ -352,9 +356,9 @@ function Orders({ refreshKey }: OrdersProps) {
       <p className="cart-feedback" role="status">
         {streamState === 'connected'
           ? 'Atualizações em tempo real conectadas.'
-          : streamState === 'connecting'
-            ? 'Conectando às atualizações em tempo real...'
-            : 'Reconectando às atualizações. Você pode usar o botão Atualizar.'}
+          : streamState === 'reconnecting'
+          ? 'Reconectando às atualizações. Você pode usar o botão Atualizar.'
+          : 'Atualizações desconectadas. Use Atualizar ou recarregue a página.'}
       </p>
 
       <div

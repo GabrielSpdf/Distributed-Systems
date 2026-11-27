@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "graphql-ws": "^6.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

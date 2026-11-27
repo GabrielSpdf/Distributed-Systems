@@ -21,7 +21,6 @@ func NewHandler(
 	frontendOrigin string,
 	database DatabasePinger,
 	graphQLRoutes http.Handler,
-	orderRoutes http.Handler,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("POST /graphql", graphQLRoutes)
@@ -33,7 +32,6 @@ func NewHandler(
 			health(writer, request, database)
 		},
 	)
-	mux.Handle("GET /api/orders/events", orderRoutes)
 
 	return cors(frontendOrigin, mux)
 }

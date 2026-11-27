@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
-	"time"
 
 	"RabbitMQ_Ecommerce/utils/events"
 )
@@ -141,41 +140,6 @@ func (repository *Repository) notifyAppliedStatusEvent(
 		status,
 		eventID,
 	)
-
-	if event.Checkout != nil {
-		repository.notifyCheckoutAvailable(
-			event.CustomerID,
-			eventID,
-			*event.Checkout,
-		)
-	}
-}
-
-func (repository *Repository) notifyCheckoutAvailable(
-	userID string,
-	eventID string,
-	checkout events.WebPaymentCheckoutPayload,
-) {
-	payload := struct {
-		OrderID     string    `json:"orderId"`
-		CheckoutURL string    `json:"checkoutUrl"`
-		ExpiresAt   time.Time `json:"expiresAt"`
-	}{
-		OrderID:     checkout.OrderID,
-		CheckoutURL: checkout.CheckoutURL,
-		ExpiresAt:   checkout.ExpiresAt.UTC(),
-	}
-
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-
-	repository.sseHub.publish(userID, orderSSEEvent{
-		Name: "payment.checkout.available",
-		ID:   eventID,
-		Data: data,
-	})
 }
 
 type OrderStatusUpdate struct {
