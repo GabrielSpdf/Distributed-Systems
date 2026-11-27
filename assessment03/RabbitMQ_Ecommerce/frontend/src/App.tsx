@@ -17,6 +17,7 @@ import Catalog from './Catalog'
 import Cart from './Cart'
 import type { CartItem } from './cartTypes'
 import PromotionPreferences from './PromotionPreferences'
+import PromotionOffers from './PromotionOffers'
 
 const services = [
   { name: 'API Gateway', detail: 'REST, autenticação e SSE' },
@@ -337,6 +338,7 @@ function App() {
         <Orders refreshKey={ordersRefreshKey} />
 
         <PromotionPreferences key={user.id} />
+        <PromotionOffers key={user.id} />
         <section aria-labelledby="services-title">
           <div className="section-heading">
             <div>
