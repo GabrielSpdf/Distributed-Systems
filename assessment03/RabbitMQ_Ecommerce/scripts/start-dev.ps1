@@ -3,7 +3,6 @@
 param(
     [switch]$AbrirTerminais,
     [switch]$Verificar,
-    [switch]$ComEmails,
     [switch]$PublicarOfertas,
     [ValidateSet('alimentos', 'limpeza', 'eletronicos')]
     [string]$Categoria = 'alimentos',
@@ -12,7 +11,7 @@ param(
     [ValidatePattern('^[1-9][0-9]*(ms|s|m|h)$')]
     [string]$ValidadeCheckout = '2m',
     # Internal option for the child terminals.
-    [ValidateSet('', 'Estoque', 'Mock', 'Pagamento', 'Entrega', 'Interesses', 'Ofertas', 'Emails', 'Gateway', 'Frontend', 'Publicador')]
+    [ValidateSet('', 'Estoque', 'Mock', 'Pagamento', 'Entrega', 'Interesses', 'Gateway', 'Frontend', 'Publicador')]
     [string]$Servico = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -21,7 +20,7 @@ $ScriptFile = $PSCommandPath
 $Settings = @('RABBITMQ_URL','DATABASE_URL','JWT_SECRET','PAYMENT_WEBHOOK_SECRET',
     'STOCK_SERVICE_URL','FRONTEND_ORIGIN','GATEWAY_PORT','STOCK_PORT','PAYMENT_PORT',
     'PAYMENT_WEBHOOK_URL','MOCK_PAYMENT_PORT','MOCK_PAYMENT_URL','MOCK_PAYMENT_PUBLIC_URL',
-    'MOCK_CHECKOUT_TTL','RESEND_API_KEY','RESEND_FROM','RESEND_TEST_RECIPIENT')
+    'MOCK_CHECKOUT_TTL')
 
 function Test-Port([int]$Port) {
     foreach ($address in @('127.0.0.1', '::1')) {
@@ -114,8 +113,6 @@ if ($Servico) {
         'Pagamento' { @('RABBITMQ_URL','DATABASE_URL','PAYMENT_WEBHOOK_SECRET','PAYMENT_PORT','PAYMENT_WEBHOOK_URL','MOCK_PAYMENT_URL') }
         'Entrega' { @('RABBITMQ_URL','DATABASE_URL') }
         'Interesses' { @('RABBITMQ_URL','DATABASE_URL') }
-        'Ofertas' { @('RABBITMQ_URL','DATABASE_URL','RESEND_FROM','RESEND_TEST_RECIPIENT') }
-        'Emails' { @('DATABASE_URL','RESEND_API_KEY','RESEND_FROM','RESEND_TEST_RECIPIENT') }
         'Gateway' { @('RABBITMQ_URL','DATABASE_URL','JWT_SECRET','STOCK_SERVICE_URL','FRONTEND_ORIGIN','GATEWAY_PORT') }
         'Publicador' { @('RABBITMQ_URL') }
         default { @() }
@@ -131,8 +128,6 @@ if ($Servico) {
         'Pagamento' { & go run ./cmd/pagamento }
         'Entrega' { & go run ./cmd/entrega }
         'Interesses' { & go run ./cmd/promocoes -interests }
-        'Ofertas' { & go run ./cmd/promocoes -offers }
-        'Emails' { & go run ./cmd/promocoes -emails }
         'Gateway' { & go run ./cmd/gateway }
         'Frontend' {
             Set-Location -LiteralPath (Join-Path $ProjectRoot 'frontend')
@@ -144,12 +139,10 @@ if ($Servico) {
     return
 }
 
-$services = @('Estoque','Mock','Pagamento','Entrega','Interesses','Ofertas','Gateway','Frontend')
-if ($ComEmails) { $services += 'Emails' }
+$services = @('Estoque','Mock','Pagamento','Entrega','Interesses','Gateway','Frontend')
 if ($PublicarOfertas) { $services += 'Publicador' }
 Write-Host ("Plano: " + ($services -join ', '))
 Write-Host 'PostgreSQL: Docker. RabbitMQ: servico nativo do Windows.'
-if ($ComEmails) { Write-Warning 'Envios reais habilitados, inclusive jobs antigos pendentes.' }
 if ($PublicarOfertas) { Write-Warning "Ofertas automaticas: $Categoria a cada $Intervalo." }
 if ($WhatIfPreference -or (-not $Verificar -and -not $AbrirTerminais)) {
     Write-Host 'Use -Verificar para checar sem alterar; -AbrirTerminais para iniciar.'
@@ -189,7 +182,6 @@ try {
     Import-LocalEnvironment
     Set-Default 'RABBITMQ_URL' 'amqp://guest:guest@127.0.0.1:5672/'
     Set-Default 'DATABASE_URL' 'postgres://ecommerce:ecommerce@localhost:5432/ecommerce?sslmode=disable'
-    Set-Default 'RESEND_FROM' 'Event Market <onboarding@resend.dev>'
     if ($PSBoundParameters.ContainsKey('ValidadeCheckout')) { $env:MOCK_CHECKOUT_TTL = $ValidadeCheckout }
     Set-Default 'MOCK_CHECKOUT_TTL' $ValidadeCheckout
     foreach ($pair in @(
@@ -212,13 +204,6 @@ try {
     }
     Require-Secret 'JWT_SECRET' 32
     Require-Secret 'PAYMENT_WEBHOOK_SECRET' 32
-    if ([string]::IsNullOrWhiteSpace($env:RESEND_TEST_RECIPIENT)) {
-        $env:RESEND_TEST_RECIPIENT = (Read-Host 'E-mail destinatario de teste das ofertas').Trim()
-    }
-    try { $address = New-Object System.Net.Mail.MailAddress($env:RESEND_TEST_RECIPIENT) }
-    catch { throw 'RESEND_TEST_RECIPIENT invalido.' }
-    if ($address.Address -ne $env:RESEND_TEST_RECIPIENT) { throw 'Informe somente o endereco de e-mail de teste.' }
-    if ($ComEmails) { Require-Secret 'RESEND_API_KEY' 1 }
     & docker info --format '{{.ServerVersion}}' | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Abra o Docker Desktop e aguarde ele ficar pronto.' }
     $container = & docker compose ps --status running -q rabbitmq
@@ -245,12 +230,13 @@ try {
         Start-Sleep -Seconds 1
     }
     if (-not $ready) { throw 'PostgreSQL nao ficou pronto.' }
-    $query = "SELECT CASE WHEN to_regclass('gateway.event_outbox') IS NOT NULL AND to_regclass('gateway.promotion_outbox') IS NOT NULL AND to_regclass('promocoes.email_jobs') IS NOT NULL AND (SELECT count(*) FROM information_schema.columns WHERE (table_schema='estoque' AND table_name='stock_reservations' AND column_name='request_payload') OR (table_schema='entrega' AND table_name='shipments' AND column_name='payment_payload')) = 2 THEN 'OK' ELSE 'MIGRATIONS_PENDENTES' END;"
+    $query = "SELECT CASE WHEN to_regclass('gateway.event_outbox') IS NOT NULL AND to_regclass('gateway.promotion_outbox') IS NOT NULL AND to_regclass('promocoes.interest_inbox') IS NOT NULL AND (SELECT count(*) FROM information_schema.columns WHERE (table_schema='estoque' AND table_name='stock_reservations' AND column_name='request_payload') OR (table_schema='entrega' AND table_name='shipments' AND column_name='payment_payload')) = 2 THEN 'OK' ELSE 'MIGRATIONS_PENDENTES' END;"
     $schema = & docker compose exec -T postgres psql -U $dbUser -d ecommerce -tA -v ON_ERROR_STOP=1 -c $query
     if ($LASTEXITCODE -ne 0 -or ($schema -join '').Trim() -ne 'OK') {
         throw 'Aplique as migrations 001-016 necessarias antes de iniciar. O script nao altera o schema.'
     }
     foreach ($name in $services) {
+        if ($name -eq 'Publicador') { continue }
         Start-Terminal $name
         switch ($name) {
             'Estoque' { Wait-Health 8081 }
@@ -260,19 +246,24 @@ try {
             'Frontend' { Wait-Health 5173 }
         }
     }
-    $expected = @('estoque','pagamento','entrega','gateway.pedidos.status','promocoes.interesses','promocoes.ofertas')
+    $expected = @('estoque','pagamento','entrega','gateway.pedidos.status','promocoes.interesses')
     $missing = $expected
     $deadline = (Get-Date).AddSeconds(45)
     do {
         $queues = @(Get-BrokerQueues)
         $missing = @($expected | Where-Object { $wanted = $_; -not ($queues | Where-Object { $_.name -eq $wanted -and $_.consumers -gt 0 }) })
+        if (-not ($queues | Where-Object {
+            $_.name -like 'gateway.promocoes.*' -and $_.consumers -gt 0
+        })) {
+            $missing += 'gateway.promocoes.*'
+        }
         if ($missing.Count -eq 0) { break }
         Start-Sleep -Seconds 1
     } while ((Get-Date) -lt $deadline)
     if ($missing.Count -gt 0) { throw ("Filas sem consumidor: " + ($missing -join ', ') + ". Confira os terminais.") }
+    if ($PublicarOfertas) { Start-Terminal 'Publicador' }
     Write-Host 'Pronto: http://localhost:5173 | RabbitMQ: http://127.0.0.1:15672'
     Write-Host 'Para parar: Ctrl+C nos terminais. Nao reinicie o Mock durante um checkout.'
-    if (-not $ComEmails) { Write-Host 'Envio de e-mails DESLIGADO. -ComEmails autoriza envios reais.' }
     if (-not $PublicarOfertas) { Write-Host 'Ofertas automaticas DESLIGADAS. Use -PublicarOfertas para habilitar.' }
 } finally {
     foreach ($name in $Settings) { [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process') }

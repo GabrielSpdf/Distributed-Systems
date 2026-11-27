@@ -21,12 +21,9 @@ func normalizePromotionCategory(category string) (string, error) {
 	}
 }
 
-func BuildPromotionEmail(
-	promotion events.PromotionPayload,
-	recipient string,
-) (EmailMessage, error) {
+func validatePromotionPayload(promotion events.PromotionPayload) error {
 	if _, err := normalizePromotionCategory(promotion.Category); err != nil {
-		return EmailMessage{}, err
+		return err
 	}
 
 	productID := strings.TrimSpace(promotion.ProductID)
@@ -35,7 +32,7 @@ func BuildPromotionEmail(
 	if productID == "" || productName == "" ||
 		len(productID) > 64 || len(productName) > 160 ||
 		strings.ContainsAny(productName, "\r\n") {
-		return EmailMessage{}, fmt.Errorf("identificação do produto inválida")
+		return fmt.Errorf("identificação do produto inválida")
 	}
 
 	for _, value := range []float64{
@@ -44,7 +41,7 @@ func BuildPromotionEmail(
 		promotion.DiscountPercentage,
 	} {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
-			return EmailMessage{}, fmt.Errorf("valor da promoção inválido")
+			return fmt.Errorf("valor da promoção inválido")
 		}
 	}
 
@@ -53,7 +50,7 @@ func BuildPromotionEmail(
 		promotion.PromotionalPrice > promotion.OriginalPrice ||
 		promotion.DiscountPercentage <= 0 ||
 		promotion.DiscountPercentage > 100 {
-		return EmailMessage{}, fmt.Errorf("preço ou desconto inválido")
+		return fmt.Errorf("preço ou desconto inválido")
 	}
 
 	expectedPrice := math.Round(
@@ -63,26 +60,8 @@ func BuildPromotionEmail(
 
 	actualPrice := math.Round(promotion.PromotionalPrice*100) / 100
 	if math.Abs(expectedPrice-actualPrice) > 0.01 {
-		return EmailMessage{}, fmt.Errorf("preço não corresponde ao desconto")
+		return fmt.Errorf("preço não corresponde ao desconto")
 	}
 
-	formatPrice := func(value float64) string {
-		return "R$ " + strings.ReplaceAll(fmt.Sprintf("%.2f", value), ".", ",")
-	}
-
-	text := fmt.Sprintf(
-		"Olá!\n\nConfira esta oferta do Event Market:\n\n"+
-			"Produto: %s\nPreço original: %s\nPreço promocional: %s\n\n"+
-			"Você pode cancelar seu interesse nessa categoria "+
-			"na seção Preferências de promoções do Event Market.",
-		productName,
-		formatPrice(promotion.OriginalPrice),
-		formatPrice(promotion.PromotionalPrice),
-	)
-
-	return EmailMessage{
-		To:      recipient,
-		Subject: "Oferta Event Market: " + productName,
-		Text:    text,
-	}, nil
+	return nil
 }

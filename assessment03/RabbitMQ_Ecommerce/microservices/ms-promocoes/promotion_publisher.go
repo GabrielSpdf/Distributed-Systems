@@ -47,7 +47,11 @@ func PublishSignedPromotion(
 	if err != nil {
 		return "", fmt.Errorf("erro ao abrir canal de preparação: %w", err)
 	}
-	err = rabbitmq.PreparePromotionOfferQueue(channel)
+	err = rabbitmq.DeclareExchange(
+		channel,
+		events.ExchangePromotions,
+		rabbitmq.ExchangeTypeTopic,
+	)
 	closeErr := channel.Close()
 	if err != nil {
 		return "", err
@@ -103,9 +107,7 @@ func BuildSignedPromotionEvent(
 	}[category]
 
 	// Valida os dados sem enviar e-mail.
-	if _, err := BuildPromotionEmail(
-		payload, "validacao@example.com",
-	); err != nil {
+	if err := validatePromotionPayload(payload); err != nil {
 		return events.EventEnvelope{}, err
 	}
 

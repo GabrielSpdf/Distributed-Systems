@@ -2,6 +2,7 @@ package promotions
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"log"
@@ -109,7 +110,9 @@ func (stream *OfferStream) consume(
 	}
 
 	// O RabbitMQ gera o nome. A fila pertence à conexão deste Gateway.
-	queue, err := channel.QueueDeclare("", false, true, true, false, nil)
+	queue, err := channel.QueueDeclare(
+		"gateway.promocoes."+rand.Text(), false, true, true, false, nil,
+	)
 	if err != nil {
 		return err
 	}

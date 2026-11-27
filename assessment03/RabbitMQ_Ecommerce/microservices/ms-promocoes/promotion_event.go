@@ -72,9 +72,7 @@ func ValidatePromotionEvent(
 
 	// Reutiliza as validações de produto, preço e desconto.
 	// Apenas monta o conteúdo; não envia e-mail.
-	if _, err := BuildPromotionEmail(
-		payload, "validacao@example.com",
-	); err != nil {
+	if err := validatePromotionPayload(payload); err != nil {
 		return invalid(err.Error())
 	}
 

@@ -13,19 +13,19 @@ try {
         '# synthetic fixture, not a real dotenv file',
         'JWT_SECRET="literal-$(not-a-command)"',
         'DATABASE_URL="fixture-value"',
-        'export RESEND_FROM=''Event Market <onboarding@resend.dev>''',
+        'export FRONTEND_ORIGIN=''http://localhost:5173''',
         'UNRELATED_SETTING=not-imported'
     )
     $unrelatedBefore = [Environment]::GetEnvironmentVariable('UNRELATED_SETTING', 'Process')
     [Environment]::SetEnvironmentVariable('JWT_SECRET', $null, 'Process')
     [Environment]::SetEnvironmentVariable('DATABASE_URL', 'preferred-existing-value', 'Process')
-    [Environment]::SetEnvironmentVariable('RESEND_FROM', $null, 'Process')
+    [Environment]::SetEnvironmentVariable('FRONTEND_ORIGIN', $null, 'Process')
     function Test-Path { param($LiteralPath) return $true }
     function Get-Content { param($LiteralPath, $Encoding) return $fixtureLines }
     Import-LocalEnvironment
     Assert ($env:JWT_SECRET -eq 'literal-$(not-a-command)') 'dotenv executed or altered literal content'
     Assert ($env:DATABASE_URL -eq 'preferred-existing-value') 'dotenv overwrote the current environment'
-    Assert ($env:RESEND_FROM -eq 'Event Market <onboarding@resend.dev>') 'quoted dotenv value was not read'
+    Assert ($env:FRONTEND_ORIGIN -eq 'http://localhost:5173') 'quoted dotenv value was not read'
     Assert ([Environment]::GetEnvironmentVariable('UNRELATED_SETTING', 'Process') -eq $unrelatedBefore) 'unknown setting imported'
     Remove-Item -LiteralPath Function:\Test-Path,Function:\Get-Content
     Write-Host 'PASS: literal dotenv, allowed settings, environment precedence'
@@ -60,13 +60,13 @@ try {
         $script:requestedUri = $Uri
         return ,@(
             [pscustomobject]@{ name = 'estoque'; consumers = 1 },
-            [pscustomobject]@{ name = 'promocoes.ofertas'; consumers = 0 }
+            [pscustomobject]@{ name = 'gateway.promocoes.exemplo'; consumers = 0 }
         )
     }
     $queues = @(Get-BrokerQueues)
     Assert ($requestedUri -eq 'http://127.0.0.1:15672/api/queues/%2F') 'wrong vhost URL'
     Assert ($queues.Count -eq 2) 'management response not flattened'
-    Assert (@($queues | Where-Object { $_.name -eq 'promocoes.ofertas' -and $_.consumers -gt 0 }).Count -eq 0) 'inactive queue treated as active'
+    Assert (@($queues | Where-Object { $_.name -eq 'gateway.promocoes.exemplo' -and $_.consumers -gt 0 }).Count -eq 0) 'inactive queue treated as active'
     Remove-Item -LiteralPath Function:\Invoke-RestMethod
     Write-Host 'PASS: native management endpoint and encoded vhost'
 } finally {

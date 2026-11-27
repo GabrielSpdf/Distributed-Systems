@@ -89,22 +89,6 @@ func (repository *InterestRepository) ApplyInterestEvent(
 		if err != nil {
 			return false, fmt.Errorf("erro ao atualizar interesse: %w", err)
 		}
-
-		if !active {
-			_, err = tx.Exec(ctx, `
-				UPDATE promocoes.email_jobs
-				SET status = 'CANCELLED',
-				    last_error = 'Interesse cancelado pelo cliente'
-				WHERE user_id = $1
-				  AND category = $2::varchar(100)
-				  AND status = 'PENDING'
-			`, payload.UserID, category)
-			if err != nil {
-				return false, fmt.Errorf(
-					"erro ao cancelar envios pendentes: %w", err,
-				)
-			}
-		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

@@ -14,9 +14,6 @@ const options: { id: PromotionCategory; label: string }[] = [
 
 function PromotionPreferences() {
   const [categories, setCategories] = useState<PromotionCategory[]>([])
-  const [email, setEmail] = useState('')
-  const [savedEmail, setSavedEmail] = useState('')
-  const [savingEmail, setSavingEmail] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<PromotionCategory | null>(null)
   const [loadError, setLoadError] = useState('')
@@ -35,8 +32,6 @@ function PromotionPreferences() {
       .then((result) => {
         if (active) {
           setCategories(result.categories)
-          setEmail(result.email)
-          setSavedEmail(result.email)
         }
       })
       .catch((error: unknown) => {
@@ -75,8 +70,7 @@ function PromotionPreferences() {
         )
         setFeedback('Interesse cancelado nessa categoria.')
       } else {
-        await subscribePromotionInterests([category], email.trim())
-        setSavedEmail(email.trim().toLowerCase())
+        await subscribePromotionInterests([category])
         setCategories((current) =>
           current.includes(category) ? current : [...current, category],
         )
@@ -94,33 +88,6 @@ function PromotionPreferences() {
     }
   }
 
-  async function updateEmail() {
-    if (categories.length === 0 || mutationInFlight.current) return
-
-    mutationInFlight.current = true
-    setSavingEmail(true)
-    setActionError('')
-    setFeedback('')
-
-    try {
-      await subscribePromotionInterests(categories, email.trim())
-      setSavedEmail(email.trim().toLowerCase())
-      setFeedback('E-mail das promoções atualizado.')
-    } catch (error: unknown) {
-      setActionError(
-        error instanceof Error
-          ? error.message
-          : 'Não foi possível atualizar o e-mail',
-      )
-    } finally {
-      mutationInFlight.current = false
-      setSavingEmail(false)
-    }
-  }
-
-  const emailChanged =
-    email.trim().toLowerCase() !== savedEmail.trim().toLowerCase()
-
   return (
     <section
       id="promotion-preferences"
@@ -135,7 +102,7 @@ function PromotionPreferences() {
       </div>
 
       <p className="promotion-preferences-description">
-        Escolha as categorias de promoções que deseja receber por e-mail.
+        Escolha as categorias das ofertas que deseja receber em tempo real.
       </p>
 
       {loading ? (
@@ -149,27 +116,6 @@ function PromotionPreferences() {
         </div>
       ) : (
         <>
-        <div className="promotion-email">
-          <label>
-            E-mail para receber as promoções
-            <input
-              type="email"
-              autoComplete="email"
-              value={email}
-              maxLength={254}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </label>
-          {categories.length > 0 && emailChanged && (
-            <button
-              type="button"
-              disabled={savingEmail || saving !== null || email.trim() === ''}
-              onClick={() => void updateEmail()}
-            >
-              {savingEmail ? 'Salvando...' : 'Atualizar e-mail'}
-            </button>
-          )}
-        </div>
         <div className="promotion-preferences-grid">
           {options.map((option) => {
             const subscribed = categories.includes(option.id)
@@ -182,9 +128,7 @@ function PromotionPreferences() {
                   type="button"
                   className={subscribed ? 'secondary' : undefined}
                   disabled={
-                    saving !== null ||
-                    savingEmail ||
-                    (!subscribed && email.trim() === '')
+                    saving !== null
                   }
                   onClick={() => void toggleCategory(option.id)}
                   aria-label={`${
@@ -206,11 +150,6 @@ function PromotionPreferences() {
 
       {feedback && <p role="status">{feedback}</p>}
       {actionError && <p role="alert">{actionError}</p>}
-
-      <p className="promotion-preferences-note">
-        Salvar a preferência não confirma o envio de um e-mail. No ambiente de
-        teste, o Resend entrega apenas ao destinatário autorizado.
-      </p>
     </section>
   )
 }

@@ -9,5 +9,4 @@ const (
 	QueueConsumer1          = "consumidor.01"
 	QueueConsumer2          = "consumidor.02"
 	QueuePromotionInterests = "promocoes.interesses"
-	QueuePromotionOffers    = "promocoes.ofertas"
 )
