@@ -41,7 +41,7 @@ func BuildInterestEvent(
 		return events.EventEnvelope{}, fmt.Errorf("ação de interesse inválida")
 	}
 
-	if err := validateCategories(payload.Categories); err != nil {
+	if err := ValidateCategories(payload.Categories); err != nil {
 		return events.EventEnvelope{}, err
 	}
 
