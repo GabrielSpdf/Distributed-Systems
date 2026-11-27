@@ -28,6 +28,7 @@ type graphQLResolver struct {
 	orderRepository     *orders.Repository
 	authentication      *auth.HTTPHandler
 	promotionRepository *promotions.Repository
+	promotionOffers     *promotions.OfferStream
 }
 
 func NewGraphQLHandler(
@@ -35,6 +36,7 @@ func NewGraphQLHandler(
 	orderRepository *orders.Repository,
 	authentication *auth.HTTPHandler,
 	promotionRepository *promotions.Repository,
+	promotionOffers *promotions.OfferStream,
 	frontendOrigin string,
 ) http.Handler {
 	schema := graphql.MustParseSchema(graphqlapi.CatalogSchema+`
@@ -108,13 +110,23 @@ func NewGraphQLHandler(
 		}
 		type Subscription {
 			pedidoAtualizado: OrderStatusUpdate!
+			promocaoDisponivel: PromotionOffer!
 		}
 		type OrderStatusUpdate {
 			eventId: String!
 			orderId: String!
 			status: String!
 		}
-	`, &graphQLResolver{stock: stock, orderRepository: orderRepository, authentication: authentication, promotionRepository: promotionRepository}, graphql.UseFieldResolvers(), graphql.MaxDepth(8))
+		type PromotionOffer {
+			eventId: String!
+			productId: String!
+			productName: String!
+			category: String!
+			discountPercentage: Float!
+			originalPrice: Float!
+			promotionalPrice: Float!
+		}
+	`, &graphQLResolver{stock: stock, orderRepository: orderRepository, authentication: authentication, promotionRepository: promotionRepository, promotionOffers: promotionOffers}, graphql.UseFieldResolvers(), graphql.MaxDepth(8))
 
 	handler := &relay.Handler{Schema: schema}
 	httpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

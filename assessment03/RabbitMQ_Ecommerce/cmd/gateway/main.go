@@ -168,6 +168,21 @@ func run() error {
 
 	promotionRepository := gatewaypromotions.NewRepository(databasePool)
 
+	promotionPublicKeys, err := cryptography.LoadPublicKeyRegistry(map[string]string{
+		events.ProducerPromotions: "keys/ms-promocoes/public.pem",
+	})
+	if err != nil {
+		return fmt.Errorf("erro ao carregar chave pública de Promoções: %w", err)
+	}
+
+	promotionOffers := gatewaypromotions.NewOfferStream()
+
+	statusWorkers.Add(1)
+	go func() {
+		defer statusWorkers.Done()
+		promotionOffers.Run(statusContext, configuration.RabbitMQURL, promotionPublicKeys)
+	}()
+
 	statusWorkers.Add(1)
 
 	go func() {
@@ -186,7 +201,7 @@ func run() error {
 		Handler: msgateway.NewHandler(
 			configuration.FrontendOrigin,
 			databasePool,
-			msgateway.NewGraphQLHandler(stockClient, orderRepository, authenticationHandler, promotionRepository, configuration.FrontendOrigin),
+			msgateway.NewGraphQLHandler(stockClient, orderRepository, authenticationHandler, promotionRepository, promotionOffers, configuration.FrontendOrigin),
 		),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
